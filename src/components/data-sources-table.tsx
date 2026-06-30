@@ -1,44 +1,81 @@
 "use client";
 
-import { useState } from "react";
-import { DATA_SOURCES } from "@/lib/data";
+import { useState, useEffect, useCallback } from "react";
 
-const COLS = "grid-cols-[1.3fr_2.1fr_0.9fr_0.9fr_auto]";
+const COLS = "grid-cols-[1.3fr_2.1fr_0.9fr_auto]";
 
 interface Row {
+  templateId: number;
   report: string;
-  url: string; // current (possibly edited) value
-  saved: string; // last persisted value
-  synced: string;
+  url: string;
+  saved: string;
 }
 
 export function DataSourcesTable() {
-  const [rows, setRows] = useState<Row[]>(
-    DATA_SOURCES.map((d) => ({
-      report: d.report,
-      url: d.url,
-      saved: d.url,
-      synced: d.synced,
-    })),
-  );
+  const [rows, setRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState<number | null>(null);
+
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await fetch("/api/templates");
+      if (res.ok) {
+        const data = await res.json();
+        setRows(
+          data.templates.map((t: { id: number; name: string; dataSourceUrl: string | null }) => ({
+            templateId: t.id,
+            report: t.name,
+            url: t.dataSourceUrl || "",
+            saved: t.dataSourceUrl || "",
+          }))
+        );
+      }
+    } catch {} finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
 
   const setUrl = (i: number, value: string) =>
     setRows((prev) =>
-      prev.map((r, idx) => (idx === i ? { ...r, url: value } : r)),
+      prev.map((r, idx) => (idx === i ? { ...r, url: value } : r))
     );
 
-  const save = (i: number) =>
-    setRows((prev) =>
-      prev.map((r, idx) =>
-        idx === i
-          ? {
-              ...r,
-              saved: r.url,
-              synced: r.url.trim() ? "Just now" : "—",
-            }
-          : r,
-      ),
+  const save = async (i: number) => {
+    const row = rows[i];
+    setSavingId(row.templateId);
+    try {
+      const res = await fetch(`/api/templates/${row.templateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceUrl: row.url.trim() }),
+      });
+      if (res.ok) {
+        setRows((prev) =>
+          prev.map((r, idx) =>
+            idx === i ? { ...r, saved: r.url } : r
+          )
+        );
+      }
+    } catch {} finally {
+      setSavingId(null);
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-12 text-muted">Loading data sources...</div>;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-card border border-line bg-surface p-8 text-center text-muted">
+        No report templates yet. Create one in Reports first.
+      </div>
     );
+  }
 
   return (
     <div className="overflow-hidden rounded-card border border-line bg-surface">
@@ -48,15 +85,15 @@ export function DataSourcesTable() {
         <span>REPORT</span>
         <span>SHEET URL</span>
         <span>STATUS</span>
-        <span>LAST SYNCED</span>
         <span />
       </div>
       {rows.map((r, i) => {
         const connected = r.saved.trim().length > 0;
         const dirty = r.url !== r.saved;
+        const isSaving = savingId === r.templateId;
         return (
           <div
-            key={r.report}
+            key={r.templateId}
             className={`grid ${COLS} items-center gap-3.5 border-t border-line px-[22px] py-3`}
           >
             <span className="text-sm font-semibold">{r.report}</span>
@@ -77,16 +114,16 @@ export function DataSourcesTable() {
                 </span>
               )}
             </span>
-            <span className="text-[13px] text-muted">{r.synced}</span>
             <button
               onClick={() => save(i)}
+              disabled={isSaving}
               className={`whitespace-nowrap rounded-[9px] text-[13px] font-semibold ${
                 dirty
                   ? "bg-accent px-4 py-2 font-bold text-accent-ink"
                   : "border border-line bg-surface px-3.5 py-2 text-muted"
               }`}
             >
-              {dirty ? "Save" : connected ? "Saved" : "Save"}
+              {isSaving ? "Saving..." : dirty ? "Save" : connected ? "Saved ✓" : "Save"}
             </button>
           </div>
         );
