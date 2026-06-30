@@ -3,13 +3,22 @@
 import { signOut, useSession } from "next-auth/react";
 import { Avatar } from "./ui";
 import { useSettings, type Schedule } from "./settings-provider";
-import {
-  CURRENT_USER,
-  DAYS,
-  RECIPIENTS,
-  REMINDER_TOGGLES,
-  TIMES,
-} from "@/lib/data";
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const TIMES = (() => {
+  const t: string[] = [];
+  for (let h = 0; h < 24; h++) {
+    t.push(String(h).padStart(2, "0") + ":00");
+    t.push(String(h).padStart(2, "0") + ":30");
+  }
+  return t;
+})();
+
+const REMINDER_TOGGLES = [
+  { key: "friday", label: "Friday reminder", desc: "Email contributors who haven't started their report" },
+  { key: "sunday", label: "Sunday final call", desc: "Reminder at 17:00 on Sunday, 3 hours before close" },
+  { key: "ready", label: "Roundup ready", desc: "Notify recipients when the weekly summary is generated" },
+];
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
@@ -100,8 +109,8 @@ export function SettingsScreen() {
   const { data: session } = useSession();
   const set = (patch: Partial<Schedule>) => setSchedule(patch);
 
-  const name = session?.user?.name ?? CURRENT_USER.name;
-  const email = session?.user?.email ?? CURRENT_USER.email;
+  const name = session?.user?.name ?? "User";
+  const email = session?.user?.email ?? "";
 
   return (
     <div className="max-w-[720px]">
@@ -195,20 +204,7 @@ export function SettingsScreen() {
         <p className="mb-3.5 mt-1.5 text-[13.5px] text-muted">
           Who receives the generated summary each week.
         </p>
-        <div className="flex flex-wrap gap-2">
-          {RECIPIENTS.map((name) => (
-            <span
-              key={name}
-              className="flex items-center gap-2 rounded-full border border-line py-1.5 pl-1.5 pr-3 text-[13px]"
-            >
-              <Avatar name={name} size={24} />
-              {name}
-            </span>
-          ))}
-          <button className="rounded-full border border-dashed border-line px-3.5 py-1.5 text-[13px] font-semibold text-muted">
-            + Add
-          </button>
-        </div>
+        <p className="text-[13px] text-muted">Manage recipients on the Team page by setting their role to &quot;Recipient&quot;.</p>
       </div>
     </div>
   );
