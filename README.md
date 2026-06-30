@@ -1,36 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Roundup
 
-## Getting Started
+Internal weekly-update platform. Team leads file a short structured update each
+week; an admin folds in supporting data (Google Sheets); an AI step produces a
+weekly **Roundup** summary (Skim + Full) for the senior leadership team.
 
-First, run the development server:
+This repo combines the recreated **UI** (all ten screens from the design handoff)
+with the **backend foundation**: Google authentication, a Postgres database
+(Neon) via Drizzle ORM, and the full Roundup data model. Domain screens still
+render mock data — wiring them to live queries is the next phase (see
+[Roadmap](#roadmap)).
+
+## Stack
+
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
+- **Tailwind CSS v4** — theme tokens as CSS custom properties (`src/app/globals.css`)
+- **NextAuth v4** with the **Google** provider (upserts users; attaches `role` to the session)
+- **Drizzle ORM** + **Neon** serverless Postgres
+- **lucide-react** icons; **Plus Jakarta Sans** + **Space Grotesk** fonts
+
+## Environment variables
+
+Set these in Vercel (and in `.env.local` for local dev):
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Neon Postgres connection string |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials |
+| `NEXTAUTH_SECRET` | NextAuth session encryption secret |
+| `NEXTAUTH_URL` | Canonical app URL (e.g. `https://your-app.vercel.app`) |
+| `ADMIN_EMAILS` | *(optional)* comma-separated admin emails. The first user to sign in is made an admin automatically. |
+
+The Google OAuth client's **Authorized redirect URI** must include
+`{NEXTAUTH_URL}/api/auth/callback/google`.
+
+## Getting started
+
+> **Node:** targets Node 20+ (developed against Node 24 LTS). If you don't have a
+> system Node, a local copy was installed at `~/.local/node-runtime/`; `dev-server.sh`
+> puts it on `PATH`.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # http://localhost:3000  (or ./dev-server.sh)
+npm run build        # production build
+npm run db:generate  # regenerate Drizzle migration from src/db/schema.ts
+npm run db:push      # sync schema to the database (interactive)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Database
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The schema lives in [`src/db/schema.ts`](src/db/schema.ts) — `users`,
+`report_templates`, `report_assignees`, `questions`, `report_instances`,
+`answers`, `roundups`, `roundup_recipients`, `settings`. Historical responses are
+never hard-deleted: `archived_at` columns implement the soft-delete semantics
+from the handoff.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+To reset the database to a clean Roundup schema (drops the legacy scaffold tables
+**and all data**):
 
-## Learn More
+```bash
+psql "$DATABASE_URL" -f drizzle/reset.sql
+# …or paste drizzle/reset.sql into the Neon SQL editor.
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Auth flow
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`/login` → "Continue with Google" → NextAuth Google OAuth → user upserted into
+Neon → redirected to `/my-reports`. The whole app shell (`src/app/(app)/`) is
+gated server-side; unauthenticated requests redirect to `/login`. The first user
+to sign in (or any address in `ADMIN_EMAILS`) becomes an administrator and sees
+the ADMIN navigation.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project structure
 
-## Deploy on Vercel
+```
+src/
+  app/
+    layout.tsx            # root: fonts + SessionProvider
+    globals.css           # Harbour theme tokens + base styles
+    page.tsx              # session-aware redirect (/my-reports or /login)
+    login/                # Google sign-in (branded)
+    api/
+      auth/[...nextauth]/ # NextAuth route
+      health/             # health check
+    (app)/                # authenticated app shell (sidebar + screens)
+      my-reports/ ...     # dashboard, report form, submitted
+      reports/ team/ roundups/ data-sources/ settings/
+  components/             # sidebar, chrome, per-screen client UI
+  db/                     # Drizzle client + schema
+  lib/                    # auth options, mock data, types, avatar helpers
+drizzle/                  # generated migrations + reset.sql
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Theming
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Production default is the **Harbour** theme. All colours, the corner radius, and
+the heading font are CSS custom properties in the `:root` block of
+[`src/app/globals.css`](src/app/globals.css) — re-skinning to another brand
+(e.g. Wonde) means editing only that block.
+
+## Roadmap
+
+Still mock / not yet wired to the database:
+
+- Persist report drafts/submissions (`report_instances` + `answers`) and render
+  My reports / the form / history from the DB.
+- Admin writes: create/edit templates + questions (soft delete), manage team &
+  roles, manage recipients, edit the schedule (`settings`).
+- The weekly **lifecycle** job: open (Mon 01:00) / close (Sun 20:00, Europe/London),
+  instance creation, lock after close.
+- **Google Sheets** read (service account) per report.
+- **AI generation**: turn the week's answers + sheet data + history into the
+  Skim/Full Roundup; status `pending → draft → sent`.
