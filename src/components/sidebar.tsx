@@ -13,7 +13,6 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { CURRENT_USER } from "@/lib/data";
 import { Avatar } from "./ui";
 
 interface NavItem {
@@ -85,11 +84,9 @@ export function Sidebar() {
   const { data: session } = useSession();
 
   const role = (session?.user as { role?: string } | undefined)?.role;
-  const name = session?.user?.name ?? CURRENT_USER.name;
-  const roleLabel = role ? (ROLE_LABEL[role] ?? "Member") : CURRENT_USER.role;
-  // Admin nav is shown to admins; until roles are assigned, fall back to showing
-  // it (these screens are mock-data and read-only in this build).
-  const isAdmin = role ? role === "admin" : true;
+  const name = session?.user?.name ?? "User";
+  const roleLabel = role ? (ROLE_LABEL[role] ?? "Member") : "Member";
+  const isAdmin = role === "admin";
 
   return (
     <aside className="sticky top-0 flex h-screen w-[248px] flex-shrink-0 flex-col border-r border-line bg-surface px-4 py-[22px]">

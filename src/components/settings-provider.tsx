@@ -5,12 +5,9 @@ import {
   useContext,
   useEffect,
   useState,
+  useCallback,
   type ReactNode,
 } from "react";
-import {
-  REMINDER_TOGGLES,
-  SCHEDULE_DEFAULTS,
-} from "@/lib/data";
 
 export interface Schedule {
   closeDay: string;
@@ -24,52 +21,107 @@ interface SettingsState {
   setSchedule: (patch: Partial<Schedule>) => void;
   reminders: Record<string, boolean>;
   toggleReminder: (key: string) => void;
+  saving: boolean;
+  loaded: boolean;
 }
 
-const STORAGE_KEY = "roundup.settings";
+const DEFAULTS: Schedule = {
+  closeDay: "Sunday",
+  closeTime: "20:00",
+  openDay: "Monday",
+  openTime: "01:00",
+};
 
-const defaultReminders: Record<string, boolean> = Object.fromEntries(
-  REMINDER_TOGGLES.map((t) => [t.key, t.on]),
-);
+const DEFAULT_REMINDERS: Record<string, boolean> = {
+  friday: true,
+  sunday: true,
+  ready: false,
+};
 
 const SettingsContext = createContext<SettingsState | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [schedule, setScheduleState] = useState<Schedule>(SCHEDULE_DEFAULTS);
-  const [reminders, setReminders] =
-    useState<Record<string, boolean>>(defaultReminders);
+  const [schedule, setScheduleState] = useState<Schedule>(DEFAULTS);
+  const [reminders, setReminders] = useState<Record<string, boolean>>(DEFAULT_REMINDERS);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
-  // Hydrate from localStorage (UI-first persistence; replaced by the backend later).
+  // Load settings from API on mount
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed.schedule) setScheduleState({ ...SCHEDULE_DEFAULTS, ...parsed.schedule });
-        if (parsed.reminders) setReminders({ ...defaultReminders, ...parsed.reminders });
-      }
-    } catch {
-      // ignore malformed storage
-    }
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.settings) {
+          const s = data.settings;
+          setScheduleState({
+            closeDay: s.closeDay || DEFAULTS.closeDay,
+            closeTime: s.closeTime || DEFAULTS.closeTime,
+            openDay: s.openDay || DEFAULTS.openDay,
+            openTime: s.openTime || DEFAULTS.openTime,
+          });
+          setReminders({
+            friday: s.reminderFriday ?? DEFAULT_REMINDERS.friday,
+            sunday: s.reminderSunday ?? DEFAULT_REMINDERS.sunday,
+            ready: s.reminderRoundupReady ?? DEFAULT_REMINDERS.ready,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ schedule, reminders }));
-    } catch {
-      // ignore quota / private-mode failures
-    }
-  }, [schedule, reminders]);
+  // Persist to API (debounced via the callers)
+  const persistToApi = useCallback(
+    async (newSchedule: Schedule, newReminders: Record<string, boolean>) => {
+      setSaving(true);
+      try {
+        await fetch("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            closeDay: newSchedule.closeDay,
+            closeTime: newSchedule.closeTime,
+            openDay: newSchedule.openDay,
+            openTime: newSchedule.openTime,
+            reminderFriday: newReminders.friday,
+            reminderSunday: newReminders.sunday,
+            reminderRoundupReady: newReminders.ready,
+          }),
+        });
+      } catch {
+        // silently fail — settings will be re-fetched on next load
+      } finally {
+        setSaving(false);
+      }
+    },
+    [],
+  );
 
-  const setSchedule = (patch: Partial<Schedule>) =>
-    setScheduleState((s) => ({ ...s, ...patch }));
+  const setSchedule = useCallback(
+    (patch: Partial<Schedule>) => {
+      setScheduleState((prev) => {
+        const next = { ...prev, ...patch };
+        persistToApi(next, reminders);
+        return next;
+      });
+    },
+    [reminders, persistToApi],
+  );
 
-  const toggleReminder = (key: string) =>
-    setReminders((r) => ({ ...r, [key]: !r[key] }));
+  const toggleReminder = useCallback(
+    (key: string) => {
+      setReminders((prev) => {
+        const next = { ...prev, [key]: !prev[key] };
+        persistToApi(schedule, next);
+        return next;
+      });
+    },
+    [schedule, persistToApi],
+  );
 
   return (
     <SettingsContext.Provider
-      value={{ schedule, setSchedule, reminders, toggleReminder }}
+      value={{ schedule, setSchedule, reminders, toggleReminder, saving, loaded }}
     >
       {children}
     </SettingsContext.Provider>
