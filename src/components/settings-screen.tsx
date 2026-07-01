@@ -2,7 +2,11 @@
 
 import { signOut, useSession } from "next-auth/react";
 import { Avatar } from "./ui";
-import { useSettings, type Schedule } from "./settings-provider";
+import {
+  useSettings,
+  type ReminderSlot,
+  type Schedule,
+} from "./settings-provider";
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const TIMES = (() => {
@@ -13,12 +17,6 @@ const TIMES = (() => {
   }
   return t;
 })();
-
-const REMINDER_TOGGLES = [
-  { key: "friday", label: "Friday reminder", desc: "Email contributors who haven't started their report" },
-  { key: "sunday", label: "Sunday final call", desc: "Reminder at 17:00 on Sunday, 3 hours before close" },
-  { key: "ready", label: "Roundup ready", desc: "Notify recipients when the weekly summary is generated" },
-];
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
@@ -104,8 +102,49 @@ function DayTime({
   );
 }
 
+function ReminderRow({
+  label,
+  slot,
+  onToggle,
+  onDay,
+  onTime,
+}: {
+  label: string;
+  slot: ReminderSlot;
+  onToggle: () => void;
+  onDay: (v: string) => void;
+  onTime: (v: string) => void;
+}) {
+  return (
+    <div className="border-t border-line py-3.5">
+      <div className="flex items-center gap-3.5">
+        <div className="flex-1">
+          <div className="text-sm font-semibold">{label}</div>
+          <div className="text-[12.5px] text-muted">
+            {slot.enabled ? `Sends ${slot.day} at ${slot.time}` : "Off"}
+          </div>
+        </div>
+        <Toggle on={slot.enabled} onClick={onToggle} />
+      </div>
+      <div
+        className={`mt-3 max-w-[300px] transition-opacity ${
+          slot.enabled ? "" : "pointer-events-none opacity-40"
+        }`}
+      >
+        <DayTime
+          dayValue={slot.day}
+          timeValue={slot.time}
+          onDay={onDay}
+          onTime={onTime}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function SettingsScreen() {
-  const { schedule, setSchedule, reminders, toggleReminder } = useSettings();
+  const { schedule, setSchedule, reminders, setReminderSlot, setRoundupReady } =
+    useSettings();
   const { data: session } = useSession();
   const set = (patch: Partial<Schedule>) => setSchedule(patch);
 
@@ -178,24 +217,43 @@ export function SettingsScreen() {
 
       {/* Reminders */}
       <Card>
-        <div className="mb-3.5">
-          <CardTitle>Reminders</CardTitle>
-        </div>
-        {REMINDER_TOGGLES.map((t) => (
-          <div
-            key={t.key}
-            className="flex items-center gap-3.5 border-t border-line py-3"
-          >
-            <div className="flex-1">
-              <div className="text-sm font-semibold">{t.label}</div>
-              <div className="text-[12.5px] text-muted">{t.desc}</div>
+        <CardTitle admin>Reminders</CardTitle>
+        <p className="mb-1 mt-1.5 text-[13.5px] text-muted">
+          Two nudges sent to contributors who haven&apos;t submitted yet, ahead
+          of the {schedule.closeDay} {schedule.closeTime} close.
+        </p>
+
+        <ReminderRow
+          label="First reminder"
+          slot={reminders.r1}
+          onToggle={() =>
+            setReminderSlot("r1", { enabled: !reminders.r1.enabled })
+          }
+          onDay={(v) => setReminderSlot("r1", { day: v })}
+          onTime={(v) => setReminderSlot("r1", { time: v })}
+        />
+        <ReminderRow
+          label="Second reminder"
+          slot={reminders.r2}
+          onToggle={() =>
+            setReminderSlot("r2", { enabled: !reminders.r2.enabled })
+          }
+          onDay={(v) => setReminderSlot("r2", { day: v })}
+          onTime={(v) => setReminderSlot("r2", { time: v })}
+        />
+
+        <div className="flex items-center gap-3.5 border-t border-line py-3.5">
+          <div className="flex-1">
+            <div className="text-sm font-semibold">Roundup ready</div>
+            <div className="text-[12.5px] text-muted">
+              Notify recipients when the weekly summary is generated.
             </div>
-            <Toggle
-              on={reminders[t.key]}
-              onClick={() => toggleReminder(t.key)}
-            />
           </div>
-        ))}
+          <Toggle
+            on={reminders.roundupReady}
+            onClick={() => setRoundupReady(!reminders.roundupReady)}
+          />
+        </div>
       </Card>
 
       {/* Recipients */}

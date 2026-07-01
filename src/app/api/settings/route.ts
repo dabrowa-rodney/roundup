@@ -23,8 +23,12 @@ export async function GET() {
         openDay: "Monday",
         openTime: "01:00",
         timezone: "Europe/London",
-        reminderFriday: true,
-        reminderSunday: true,
+        reminder1Enabled: true,
+        reminder1Day: "Thursday",
+        reminder1Time: "13:00",
+        reminder2Enabled: true,
+        reminder2Day: "Friday",
+        reminder2Time: "09:00",
         reminderRoundupReady: false,
       },
     });
@@ -55,8 +59,10 @@ export async function PATCH(req: NextRequest) {
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
   const allowedFields = [
-    "closeDay", "closeTime", "openDay", "openTime",
-    "timezone", "reminderFriday", "reminderSunday", "reminderRoundupReady",
+    "closeDay", "closeTime", "openDay", "openTime", "timezone",
+    "reminder1Enabled", "reminder1Day", "reminder1Time",
+    "reminder2Enabled", "reminder2Day", "reminder2Time",
+    "reminderRoundupReady",
   ];
 
   for (const field of allowedFields) {

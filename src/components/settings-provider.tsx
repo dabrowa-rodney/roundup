@@ -16,11 +16,24 @@ export interface Schedule {
   openTime: string;
 }
 
+export interface ReminderSlot {
+  enabled: boolean;
+  day: string;
+  time: string;
+}
+
+export interface Reminders {
+  r1: ReminderSlot;
+  r2: ReminderSlot;
+  roundupReady: boolean;
+}
+
 interface SettingsState {
   schedule: Schedule;
   setSchedule: (patch: Partial<Schedule>) => void;
-  reminders: Record<string, boolean>;
-  toggleReminder: (key: string) => void;
+  reminders: Reminders;
+  setReminderSlot: (which: "r1" | "r2", patch: Partial<ReminderSlot>) => void;
+  setRoundupReady: (on: boolean) => void;
   saving: boolean;
   loaded: boolean;
 }
@@ -32,21 +45,21 @@ const DEFAULTS: Schedule = {
   openTime: "01:00",
 };
 
-const DEFAULT_REMINDERS: Record<string, boolean> = {
-  friday: true,
-  sunday: true,
-  ready: false,
+const DEFAULT_REMINDERS: Reminders = {
+  r1: { enabled: true, day: "Thursday", time: "13:00" },
+  r2: { enabled: true, day: "Friday", time: "09:00" },
+  roundupReady: false,
 };
 
 const SettingsContext = createContext<SettingsState | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [schedule, setScheduleState] = useState<Schedule>(DEFAULTS);
-  const [reminders, setReminders] = useState<Record<string, boolean>>(DEFAULT_REMINDERS);
+  const [reminders, setReminders] = useState<Reminders>(DEFAULT_REMINDERS);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  // Load settings from API on mount
+  // Load settings from the API on mount.
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
@@ -60,9 +73,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             openTime: s.openTime || DEFAULTS.openTime,
           });
           setReminders({
-            friday: s.reminderFriday ?? DEFAULT_REMINDERS.friday,
-            sunday: s.reminderSunday ?? DEFAULT_REMINDERS.sunday,
-            ready: s.reminderRoundupReady ?? DEFAULT_REMINDERS.ready,
+            r1: {
+              enabled: s.reminder1Enabled ?? DEFAULT_REMINDERS.r1.enabled,
+              day: s.reminder1Day || DEFAULT_REMINDERS.r1.day,
+              time: s.reminder1Time || DEFAULT_REMINDERS.r1.time,
+            },
+            r2: {
+              enabled: s.reminder2Enabled ?? DEFAULT_REMINDERS.r2.enabled,
+              day: s.reminder2Day || DEFAULT_REMINDERS.r2.day,
+              time: s.reminder2Time || DEFAULT_REMINDERS.r2.time,
+            },
+            roundupReady: s.reminderRoundupReady ?? DEFAULT_REMINDERS.roundupReady,
           });
         }
       })
@@ -70,9 +91,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoaded(true));
   }, []);
 
-  // Persist to API (debounced via the callers)
   const persistToApi = useCallback(
-    async (newSchedule: Schedule, newReminders: Record<string, boolean>) => {
+    async (newSchedule: Schedule, newReminders: Reminders) => {
       setSaving(true);
       try {
         await fetch("/api/settings", {
@@ -83,13 +103,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             closeTime: newSchedule.closeTime,
             openDay: newSchedule.openDay,
             openTime: newSchedule.openTime,
-            reminderFriday: newReminders.friday,
-            reminderSunday: newReminders.sunday,
-            reminderRoundupReady: newReminders.ready,
+            reminder1Enabled: newReminders.r1.enabled,
+            reminder1Day: newReminders.r1.day,
+            reminder1Time: newReminders.r1.time,
+            reminder2Enabled: newReminders.r2.enabled,
+            reminder2Day: newReminders.r2.day,
+            reminder2Time: newReminders.r2.time,
+            reminderRoundupReady: newReminders.roundupReady,
           }),
         });
       } catch {
-        // silently fail — settings will be re-fetched on next load
+        // silently fail — settings re-fetch on next load
       } finally {
         setSaving(false);
       }
@@ -108,10 +132,21 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     [reminders, persistToApi],
   );
 
-  const toggleReminder = useCallback(
-    (key: string) => {
+  const setReminderSlot = useCallback(
+    (which: "r1" | "r2", patch: Partial<ReminderSlot>) => {
       setReminders((prev) => {
-        const next = { ...prev, [key]: !prev[key] };
+        const next = { ...prev, [which]: { ...prev[which], ...patch } };
+        persistToApi(schedule, next);
+        return next;
+      });
+    },
+    [schedule, persistToApi],
+  );
+
+  const setRoundupReady = useCallback(
+    (on: boolean) => {
+      setReminders((prev) => {
+        const next = { ...prev, roundupReady: on };
         persistToApi(schedule, next);
         return next;
       });
@@ -121,7 +156,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   return (
     <SettingsContext.Provider
-      value={{ schedule, setSchedule, reminders, toggleReminder, saving, loaded }}
+      value={{
+        schedule,
+        setSchedule,
+        reminders,
+        setReminderSlot,
+        setRoundupReady,
+        saving,
+        loaded,
+      }}
     >
       {children}
     </SettingsContext.Provider>

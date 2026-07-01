@@ -106,8 +106,12 @@ CREATE TABLE "settings" (
 	"open_day" text DEFAULT 'Monday' NOT NULL,
 	"open_time" text DEFAULT '01:00' NOT NULL,
 	"timezone" text DEFAULT 'Europe/London' NOT NULL,
-	"reminder_friday" boolean DEFAULT true NOT NULL,
-	"reminder_sunday" boolean DEFAULT true NOT NULL,
+	"reminder1_enabled" boolean DEFAULT true NOT NULL,
+	"reminder1_day" text DEFAULT 'Thursday' NOT NULL,
+	"reminder1_time" text DEFAULT '13:00' NOT NULL,
+	"reminder2_enabled" boolean DEFAULT true NOT NULL,
+	"reminder2_day" text DEFAULT 'Friday' NOT NULL,
+	"reminder2_time" text DEFAULT '09:00' NOT NULL,
 	"reminder_roundup_ready" boolean DEFAULT false NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );

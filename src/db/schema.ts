@@ -147,8 +147,14 @@ export const settings = pgTable("settings", {
   openDay: text("open_day").notNull().default("Monday"),
   openTime: text("open_time").notNull().default("01:00"),
   timezone: text("timezone").notNull().default("Europe/London"),
-  reminderFriday: boolean("reminder_friday").notNull().default(true),
-  reminderSunday: boolean("reminder_sunday").notNull().default(true),
+  // Two reminder slots — sent ahead of close to contributors who haven't submitted.
+  reminder1Enabled: boolean("reminder1_enabled").notNull().default(true),
+  reminder1Day: text("reminder1_day").notNull().default("Thursday"),
+  reminder1Time: text("reminder1_time").notNull().default("13:00"),
+  reminder2Enabled: boolean("reminder2_enabled").notNull().default(true),
+  reminder2Day: text("reminder2_day").notNull().default("Friday"),
+  reminder2Time: text("reminder2_time").notNull().default("09:00"),
+  // Notify recipients when the weekly Roundup summary is generated.
   reminderRoundupReady: boolean("reminder_roundup_ready")
     .notNull()
     .default(false),
