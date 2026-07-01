@@ -29,15 +29,15 @@ export function Avatar({
 }
 
 const STATUS_PILL: Record<ReportStatus, string> = {
-  "In progress": "bg-warn text-white",
-  "Not started": "bg-line text-muted",
-  Submitted: "bg-good text-white",
+  "In progress": "bg-warn-soft text-warn-ink",
+  "Not started": "bg-line/50 text-muted",
+  Submitted: "bg-good-soft text-good-ink",
 };
 
 export function StatusPill({ status }: { status: ReportStatus }) {
   return (
     <span
-      className={`whitespace-nowrap rounded-[7px] px-2.5 py-1 text-[11.5px] font-bold ${STATUS_PILL[status]}`}
+      className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[11.5px] font-semibold ${STATUS_PILL[status]}`}
     >
       {status}
     </span>
@@ -47,12 +47,12 @@ export function StatusPill({ status }: { status: ReportStatus }) {
 export function RoleBadge({ role }: { role: Role }) {
   const styles: Record<Role, string> = {
     Administrator: "bg-accent-soft text-accent",
-    Contributor: "bg-line text-ink",
+    Contributor: "bg-line/50 text-ink",
     Recipient: "border border-line text-muted",
   };
   return (
     <span
-      className={`rounded-[7px] px-2.5 py-1 text-[11.5px] font-bold ${styles[role]}`}
+      className={`rounded-md px-2.5 py-1 text-[11.5px] font-semibold ${styles[role]}`}
     >
       {role}
     </span>

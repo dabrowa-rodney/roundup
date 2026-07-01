@@ -11,13 +11,13 @@ function slug(week: string): string {
 
 function StatusPill({ status }: { status: RoundupListItem["status"] }) {
   const styles: Record<RoundupListItem["status"], string> = {
-    Sent: "bg-good text-white",
-    Draft: "bg-warn text-white",
-    Pending: "bg-line text-muted",
+    Sent: "bg-good-soft text-good-ink",
+    Draft: "bg-warn-soft text-warn-ink",
+    Pending: "bg-line/50 text-muted",
   };
   return (
     <span
-      className={`rounded-[7px] px-2.5 py-1 text-[11.5px] font-bold ${styles[status]}`}
+      className={`rounded-md px-2.5 py-1 text-[11.5px] font-semibold ${styles[status]}`}
     >
       {status}
     </span>

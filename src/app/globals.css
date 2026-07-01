@@ -1,47 +1,118 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Wonde 3.0 brand — self-hosted fonts.
+   Gilroy = display/headings/buttons · Inter = body/UI.
+   ============================================================ */
+@font-face {
+  font-family: "Gilroy";
+  src: url("/fonts/Gilroy-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Gilroy";
+  src: url("/fonts/Gilroy-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Gilroy";
+  src: url("/fonts/Gilroy-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Gilroy";
+  src: url("/fonts/Gilroy-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Gilroy";
+  src:
+    url("/fonts/Gilroy-ExtraBold.woff") format("woff"),
+    url("/fonts/Gilroy-ExtraBold.ttf") format("truetype");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-VariableFont_opsz_wght.ttf") format("truetype-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /*
-  Roundup theme tokens — production default is "Harbour" (corporate/clean).
-  Re-skinning to another brand (e.g. Wonde) means swapping ONLY this :root block;
-  layout, spacing and type scale are theme-independent. The three semantic
-  status colours (good/warn/bad) are shared across every theme.
+  Wonde 3.0 tokens. This :root block is the single place the brand is defined —
+  every screen consumes these via Tailwind utilities, so re-skinning happens here.
+  Values are taken from the canonical Wonde design-system source (tokens.css).
 */
 :root {
-  --bg: #f3f6fb;
+  --bg: #eff1f7; /* gray-100 — page background */
   --surface: #ffffff;
-  --ink: #15233f;
-  --muted: #5c6883;
-  --line: #e1e7f1;
-  --accent: #2d54eb;
-  --accent-ink: #ffffff;
-  --accent-soft: #e7ecfd;
-  --radius: 12px;
+  --ink: #161925; /* blue-950 — body text */
+  --heading: #27325e; /* blazer navy — headings */
+  --muted: #56688a; /* gray-600 */
+  --line: #c0cad8; /* gray-200 — borders */
 
-  /* Shared semantic / status colours */
-  --good: #2e7d55;
-  --warn: #c2912b;
-  --bad: #c2493c;
-  --red-tint: #f6e5df;
+  --accent: #4368fa; /* blue-500 — primary */
+  --accent-hover: #4160db; /* blue-600 */
+  --accent-ink: #ffffff;
+  --accent-soft: #eff3ff; /* blue-50 — tinted panels */
+
+  /* Status — solid (dots/labels) + soft badge tints + dark badge ink */
+  --good: #47ab7e; /* success-600 */
+  --good-soft: #def7ec; /* success-100 */
+  --good-ink: #1c5a3e; /* success-800 */
+  --warn: #f5b02b; /* warning-400 */
+  --warn-soft: #fff1c8; /* warning-100 */
+  --warn-ink: #a83e09; /* warning-700 */
+  --bad: #e11d48; /* danger-600 */
+  --bad-soft: #ffe4e6; /* danger-100 */
+  --bad-ink: #be123c; /* danger-700 */
+  --red-tint: #ffe4e6; /* soft red surface */
+
+  --radius: 16px; /* radius-2xl — cards */
+
+  /* Blazer-tinted shadow (never neutral grey) */
+  --shadow-blazer: 39 50 94;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-ink: var(--ink);
+  --color-heading: var(--heading);
   --color-muted: var(--muted);
   --color-line: var(--line);
+
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
+
   --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-good-ink: var(--good-ink);
   --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
   --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-bad-ink: var(--bad-ink);
   --color-red-tint: var(--red-tint);
 
   --radius-card: var(--radius);
 
-  --font-head: var(--font-space-grotesk), "Space Grotesk", sans-serif;
-  --font-body: var(--font-plus-jakarta), "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-head: "Gilroy", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
 }
 
 * {
@@ -56,6 +127,16 @@ body {
   font-size: 14px;
 }
 
+/* Gilroy on headings and buttons — the Wonde display voice */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-head);
+}
+
 ::selection {
   background: var(--accent-soft);
 }
@@ -65,6 +146,9 @@ textarea,
 button,
 select {
   font-family: inherit;
+}
+button {
+  font-family: var(--font-head);
 }
 
 textarea {

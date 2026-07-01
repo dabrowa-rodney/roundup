@@ -105,11 +105,11 @@ export function DataSourcesTable() {
             />
             <span>
               {connected ? (
-                <span className="rounded-[7px] bg-good px-2.5 py-1 text-[11.5px] font-bold text-white">
+                <span className="rounded-md bg-good-soft px-2.5 py-1 text-[11.5px] font-semibold text-good-ink">
                   Connected
                 </span>
               ) : (
-                <span className="rounded-[7px] bg-red-tint px-2.5 py-1 text-[11.5px] font-bold text-bad">
+                <span className="rounded-md bg-line/50 px-2.5 py-1 text-[11.5px] font-semibold text-muted">
                   Not set
                 </span>
               )}

@@ -1,14 +1,14 @@
 // Avatar helpers — initials + a deterministic colour hashed from the name.
-// Palette is shared across themes (see design tokens in the handoff README).
+// Palette drawn from the Wonde 3.0 brand colour set.
 
 export const AVATAR_PALETTE = [
-  "#2E6B4E",
-  "#2D54EB",
-  "#CC5333",
-  "#7A4FB5",
-  "#1F8A8A",
-  "#B5762E",
-  "#C0455B",
+  "#4368FA", // blue (primary)
+  "#27325E", // blazer navy
+  "#E05C3F", // apricot
+  "#00A5DB", // pinafore / info
+  "#47AB7E", // success
+  "#F99B07", // warning
+  "#8C3C35", // brick
 ] as const;
 
 /** Two-letter uppercase initials from a person's name. */

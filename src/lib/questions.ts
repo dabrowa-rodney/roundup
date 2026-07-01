@@ -28,9 +28,9 @@ export const TYPE_LABELS: Record<string, string> = {
 export const CHOICE_TYPES = new Set(["single_choice", "multi_choice"]);
 
 export const RAG_CHOICES = [
-  { key: "green", label: "Green", sub: "No concerns", color: "#2E7D55" },
-  { key: "amber", label: "Amber", sub: "Watching it", color: "#C2912B" },
-  { key: "red", label: "Red", sub: "Needs attention", color: "#C2493C" },
+  { key: "green", label: "Green", sub: "No concerns", color: "#47AB7E" },
+  { key: "amber", label: "Amber", sub: "Watching it", color: "#F5B02B" },
+  { key: "red", label: "Red", sub: "Needs attention", color: "#E11D48" },
 ] as const;
 
 const RAG_LABEL: Record<string, string> = {
