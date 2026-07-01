@@ -17,6 +17,27 @@ export function mondayOf(date: Date): Date {
   return d;
 }
 
+/** "YYYY-MM-DD" for a date's UTC calendar day. */
+export function toISODate(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    d.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
+/**
+ * Canonical weekStart as a plain date string ("YYYY-MM-DD" of the Monday).
+ * Stored/compared as a SQL `date` — no time, no timezone — so it round-trips
+ * cleanly through URLs and the driver.
+ */
+export function mondayISO(date: Date): string {
+  return toISODate(mondayOf(date));
+}
+
+/** Parse a "YYYY-MM-DD" week string back to a UTC-midnight Date (for labels). */
+export function parseISODate(s: string): Date {
+  return new Date(`${s}T00:00:00Z`);
+}
+
 /** ISO-8601 week number for `date`. */
 export function isoWeek(date: Date): number {
   const d = new Date(

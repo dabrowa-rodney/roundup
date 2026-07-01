@@ -15,7 +15,7 @@ import {
 import { Screen } from "@/components/screen";
 import { SectionLabel } from "@/components/ui";
 import { formatAnswer, parseConfig } from "@/lib/questions";
-import { mondayOf, weekLabel } from "@/lib/dates";
+import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
 
 export default async function SubmittedPage({
   params,
@@ -49,7 +49,8 @@ export default async function SubmittedPage({
   )[0];
   if (!template) notFound();
 
-  const monday = mondayOf(new Date());
+  const weekIso = mondayISO(new Date());
+  const weekStartDate = parseISODate(weekIso);
   const instance = (
     await db
       .select()
@@ -58,7 +59,7 @@ export default async function SubmittedPage({
         and(
           eq(reportInstances.templateId, templateId),
           eq(reportInstances.userId, me.id),
-          eq(reportInstances.weekStart, monday),
+          eq(reportInstances.weekStart, weekIso),
         ),
       )
       .limit(1)
@@ -93,7 +94,7 @@ export default async function SubmittedPage({
   }));
 
   return (
-    <Screen title="Report submitted" subtitle={weekLabel(monday)}>
+    <Screen title="Report submitted" subtitle={weekLabel(weekStartDate)}>
       <div className="mx-auto max-w-[680px]">
         <div className="rounded-card border border-line bg-surface p-10 text-center">
           <div className="mx-auto mb-[18px] flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
@@ -104,7 +105,7 @@ export default async function SubmittedPage({
           </div>
           <p className="mt-2 text-[15px] text-muted">
             Thanks, {firstName} — your {template.name} update for{" "}
-            {weekLabel(monday)} is in. It&apos;ll feed into this week&apos;s
+            {weekLabel(weekStartDate)} is in. It&apos;ll feed into this week&apos;s
             Roundup.
           </p>
           <div className="mt-[22px] flex flex-wrap justify-center gap-[11px]">

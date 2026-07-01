@@ -9,7 +9,7 @@ import {
   roundups,
   settings,
 } from "@/db/schema";
-import { mondayOf, weekNumberLabel, weekRange } from "@/lib/dates";
+import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
 const COLS = "grid-cols-[1.2fr_1.4fr_1fr_1fr_90px]";
 
@@ -36,20 +36,16 @@ function StatusPill({ status }: { status: Status }) {
   );
 }
 
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
 export default async function RoundupsPage() {
-  const monday = mondayOf(new Date());
+  const weekIso = mondayISO(new Date());
 
   // Close schedule (for the banner), with defaults if unset.
   const settingsRow = (await db.select().from(settings).limit(1))[0];
   const closeDay = settingsRow?.closeDay ?? "Sunday";
   const closeTime = settingsRow?.closeTime ?? "20:00";
 
-  // How many reports are expected each week = active template × assignee pairs.
-  const totalAssignments =
+  // Reports expected each week = active template × assignee pairs.
+  const totalExpected =
     (
       await db
         .select({ count: sql<number>`count(*)::int` })
@@ -61,7 +57,7 @@ export default async function RoundupsPage() {
         .where(isNull(reportTemplates.archivedAt))
     )[0]?.count ?? 0;
 
-  // Submitted counts per week.
+  // Submitted counts per week (weekStart is a plain date string).
   const weekAgg = await db
     .select({
       weekStart: reportInstances.weekStart,
@@ -70,39 +66,36 @@ export default async function RoundupsPage() {
     .from(reportInstances)
     .groupBy(reportInstances.weekStart);
 
-  const roundupRows = await db.select().from(roundups);
+  const roundupRows = await db
+    .select({ weekStart: roundups.weekStart, status: roundups.status })
+    .from(roundups);
 
-  // Merge instance weeks + roundup rows into one per-week list.
   const byWeek = new Map<
     string,
-    { weekStart: Date; submitted: number; status: string | null }
+    { weekStart: string; submitted: number; status: string | null }
   >();
   for (const a of weekAgg) {
-    const ws = new Date(a.weekStart);
-    byWeek.set(ws.toISOString(), {
-      weekStart: ws,
+    byWeek.set(a.weekStart, {
+      weekStart: a.weekStart,
       submitted: a.submitted,
       status: null,
     });
   }
   for (const r of roundupRows) {
-    const ws = new Date(r.weekStart);
-    const key = ws.toISOString();
-    const existing = byWeek.get(key) ?? {
-      weekStart: ws,
+    const existing = byWeek.get(r.weekStart) ?? {
+      weekStart: r.weekStart,
       submitted: 0,
       status: null,
     };
     existing.status = r.status;
-    byWeek.set(key, existing);
+    byWeek.set(r.weekStart, existing);
   }
 
-  const weeks = [...byWeek.values()].sort(
-    (a, b) => b.weekStart.getTime() - a.weekStart.getTime(),
+  const weeks = [...byWeek.values()].sort((a, b) =>
+    a.weekStart < b.weekStart ? 1 : -1,
   );
 
-  const submittedThisWeek =
-    byWeek.get(monday.toISOString())?.submitted ?? 0;
+  const submittedThisWeek = byWeek.get(weekIso)?.submitted ?? 0;
 
   return (
     <Screen title="Roundups" subtitle="Generated weekly summaries">
@@ -110,19 +103,18 @@ export default async function RoundupsPage() {
       <div className="mb-[22px] flex flex-wrap items-center gap-5 rounded-card bg-accent px-[26px] py-6 text-accent-ink">
         <div className="min-w-[220px] flex-1">
           <div className="text-[12.5px] font-bold tracking-[0.05em] opacity-80">
-            THIS WEEK · {weekNumberLabel(monday)}
+            THIS WEEK · {weekNumberLabel(parseISODate(weekIso))}
           </div>
           <div className="mt-[5px] font-head text-[20px] font-bold">
-            {submittedThisWeek} of {totalAssignments} report
-            {totalAssignments === 1 ? "" : "s"} in — closes {closeDay}{" "}
-            {closeTime}
+            {submittedThisWeek} of {totalExpected} report
+            {totalExpected === 1 ? "" : "s"} in — closes {closeDay} {closeTime}
           </div>
           <div className="mt-1 text-[13.5px] opacity-85">
             Generate the Roundup once the window closes, or draft a preview now.
           </div>
         </div>
         <Link
-          href={`/roundups/${isoDate(monday)}`}
+          href={`/roundups/${weekIso}`}
           className="rounded-full bg-accent-ink px-[22px] py-3 text-sm font-bold text-accent"
         >
           Generate preview
@@ -132,9 +124,7 @@ export default async function RoundupsPage() {
       {/* Weeks table */}
       {weeks.length === 0 ? (
         <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center">
-          <div className="font-head text-[18px] font-bold">
-            No roundups yet
-          </div>
+          <div className="font-head text-[18px] font-bold">No roundups yet</div>
           <p className="mx-auto mt-1.5 max-w-[440px] text-[14px] text-muted">
             Once contributors start filing this week&apos;s reports, the week
             will appear here — and you can generate its Roundup.
@@ -151,31 +141,32 @@ export default async function RoundupsPage() {
             <span>STATUS</span>
             <span />
           </div>
-          {weeks.map((w) => (
-            <div
-              key={w.weekStart.toISOString()}
-              className={`grid ${COLS} items-center gap-3.5 border-t border-line px-[22px] py-[15px]`}
-            >
-              <span className="font-head text-[14.5px] font-bold">
-                {weekNumberLabel(w.weekStart)}
-              </span>
-              <span className="text-[13.5px] text-muted">
-                {weekRange(w.weekStart)}
-              </span>
-              <span className="text-[13.5px]">
-                {w.submitted} of {totalAssignments}
-              </span>
-              <span>
-                <StatusPill status={statusLabel(w.status)} />
-              </span>
-              <Link
-                href={`/roundups/${isoDate(w.weekStart)}`}
-                className="text-right text-[13.5px] font-bold text-accent"
+          {weeks.map((w) => {
+            const d = parseISODate(w.weekStart);
+            return (
+              <div
+                key={w.weekStart}
+                className={`grid ${COLS} items-center gap-3.5 border-t border-line px-[22px] py-[15px]`}
               >
-                View →
-              </Link>
-            </div>
-          ))}
+                <span className="font-head text-[14.5px] font-bold">
+                  {weekNumberLabel(d)}
+                </span>
+                <span className="text-[13.5px] text-muted">{weekRange(d)}</span>
+                <span className="text-[13.5px]">
+                  {w.submitted} of {totalExpected}
+                </span>
+                <span>
+                  <StatusPill status={statusLabel(w.status)} />
+                </span>
+                <Link
+                  href={`/roundups/${w.weekStart}`}
+                  className="text-right text-[13.5px] font-bold text-accent"
+                >
+                  View →
+                </Link>
+              </div>
+            );
+          })}
         </div>
       )}
     </Screen>

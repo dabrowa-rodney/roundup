@@ -16,7 +16,8 @@ import { ProgressBar, SectionLabel, StatusPill } from "@/components/ui";
 import type { ReportStatus } from "@/lib/types";
 import {
   greeting,
-  mondayOf,
+  mondayISO,
+  parseISODate,
   relativeTime,
   weekLabel,
   weekNumberLabel,
@@ -59,8 +60,8 @@ export default async function MyReportsPage() {
   const email = session?.user?.email?.toLowerCase();
   const firstName = (session?.user?.name ?? "there").split(" ")[0];
 
-  const monday = mondayOf(new Date());
-  const thisWeekLabel = weekLabel(monday);
+  const weekIso = mondayISO(new Date());
+  const thisWeekLabel = weekLabel(parseISODate(weekIso));
 
   const me = email
     ? (
@@ -119,7 +120,7 @@ export default async function MyReportsPage() {
           and(
             eq(reportInstances.userId, me.id),
             inArray(reportInstances.templateId, ids),
-            eq(reportInstances.weekStart, monday),
+            eq(reportInstances.weekStart, weekIso),
           ),
         );
       const instMap = new Map(insts.map((i) => [i.templateId, i]));
@@ -164,14 +165,14 @@ export default async function MyReportsPage() {
         and(
           eq(reportInstances.userId, me.id),
           inArray(reportInstances.status, ["submitted", "locked"]),
-          lt(reportInstances.weekStart, monday),
+          lt(reportInstances.weekStart, weekIso),
         ),
       )
       .orderBy(desc(reportInstances.weekStart))
       .limit(12);
 
     previous = prev.map((p) => {
-      const ws = new Date(p.weekStart);
+      const ws = parseISODate(p.weekStart);
       return {
         key: `${p.templateId}-${ws.toISOString()}`,
         week: weekNumberLabel(ws),

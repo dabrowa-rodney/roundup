@@ -5,16 +5,13 @@ import { useState } from "react";
 import { ArrowLeft, Share2 } from "lucide-react";
 import { Segmented } from "./segmented";
 import { SectionLabel } from "./ui";
-import {
-  ROUNDUP_CHANGES,
-  ROUNDUP_CONTRIBUTORS,
-  ROUNDUP_FULL,
-  ROUNDUP_META,
-  ROUNDUP_METRICS,
-  ROUNDUP_RISKS,
-  ROUNDUP_WINS,
-} from "@/lib/data";
-import type { MetricItem, Rag, RiskItem } from "@/lib/types";
+import type {
+  FullJson,
+  MetricItem,
+  Rag,
+  Severity,
+  SkimJson,
+} from "@/lib/roundup";
 
 type Mode = "skim" | "full";
 
@@ -24,13 +21,21 @@ const MODE_OPTIONS = [
 ];
 
 const RAG_COLOR: Record<Rag, string> = {
-  green: "#2E7D55",
-  amber: "#C2912B",
-  red: "#C2493C",
+  green: "#47AB7E",
+  amber: "#F5B02B",
+  red: "#E11D48",
 };
 
-function sevClass(sev: RiskItem["sev"]): string {
-  return sev === "High" ? "bg-bad" : sev === "Medium" ? "bg-warn" : "bg-muted";
+function ragColor(rag: Rag | null): string {
+  return rag ? RAG_COLOR[rag] : "var(--muted)";
+}
+
+function sevClass(sev: Severity): string {
+  return sev === "High"
+    ? "bg-bad-soft text-bad-ink"
+    : sev === "Medium"
+      ? "bg-warn-soft text-warn-ink"
+      : "bg-line/50 text-muted";
 }
 
 function MetricCard({ m, compact = false }: { m: MetricItem; compact?: boolean }) {
@@ -48,17 +53,25 @@ function MetricCard({ m, compact = false }: { m: MetricItem; compact?: boolean }
       >
         {m.value}
       </div>
-      <div
-        className="mt-1 text-[12.5px] font-bold"
-        style={{ color: m.good ? "var(--good)" : "var(--bad)" }}
-      >
-        {m.delta}
-      </div>
+      {m.delta && (
+        <div
+          className="mt-1 text-[12.5px] font-bold"
+          style={{ color: m.good ? "var(--good)" : "var(--bad)" }}
+        >
+          {m.delta}
+        </div>
+      )}
     </div>
   );
 }
 
-export function RoundupViewer() {
+export function RoundupViewer({
+  skim,
+  full,
+}: {
+  skim: SkimJson;
+  full: FullJson;
+}) {
   const [mode, setMode] = useState<Mode>("skim");
 
   return (
@@ -77,228 +90,276 @@ export function RoundupViewer() {
         </button>
       </div>
 
-      {mode === "skim" ? <Skim /> : <Full />}
+      {mode === "skim" ? <Skim skim={skim} /> : <Full full={full} />}
     </div>
   );
 }
 
-function Skim() {
+function Skim({ skim }: { skim: SkimJson }) {
+  const showChanges = skim.changes.length > 0;
+  const showHighlights = skim.highlights.length > 0;
+
   return (
     <div className="fade-up">
       <div className="rounded-card border border-line bg-surface px-8 py-[30px]">
         <div className="text-[12.5px] font-bold tracking-[0.05em] text-muted">
-          {ROUNDUP_META.week}
+          {skim.week.toUpperCase()} ROUNDUP · {skim.range.toUpperCase()}
         </div>
         <div className="mt-2.5 font-head text-[25px] font-bold leading-[1.25] tracking-[-0.02em]">
-          {ROUNDUP_META.headline}
+          {skim.headline}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted">
-          <span>{ROUNDUP_META.reportsIn}</span>
-          <span className="text-line">·</span>
-          <span>{ROUNDUP_META.generated}</span>
-          <span className="text-line">·</span>
-          <span>{ROUNDUP_META.readTime}</span>
+          <span>{skim.reportsIn}</span>
+          {skim.generated && (
+            <>
+              <span className="text-line">·</span>
+              <span>{skim.generated}</span>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="mb-[11px] mt-[26px] text-[12px] font-bold tracking-[0.06em] text-bad">
-        ⚑ NEEDS SENIOR ATTENTION
-      </div>
-      <div className="flex flex-col gap-2.5">
-        {ROUNDUP_RISKS.map((r) => (
-          <div
-            key={r.text}
-            className="flex items-start gap-3.5 rounded-xl border border-line border-l-[3px] border-l-bad bg-surface px-[18px] py-4"
-          >
-            <span
-              className={`flex-shrink-0 whitespace-nowrap rounded-md px-[9px] py-[3px] text-[11px] font-bold text-white ${sevClass(
-                r.sev,
-              )}`}
-            >
-              {r.sev}
-            </span>
-            <div className="flex-1">
-              <div className="text-[14.5px] font-medium leading-[1.5]">
-                {r.text}
-              </div>
-              <div className="mt-[5px] text-[12.5px] text-muted">{r.who}</div>
-            </div>
+      {skim.risks.length > 0 && (
+        <>
+          <div className="mb-[11px] mt-[26px] text-[12px] font-bold tracking-[0.06em] text-bad">
+            ⚑ NEEDS SENIOR ATTENTION
           </div>
-        ))}
-      </div>
-
-      <div className="mt-[26px] grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div>
-          <SectionLabel className="mb-[11px]">What changed</SectionLabel>
-          <div className="overflow-hidden rounded-card border border-line bg-surface">
-            {ROUNDUP_CHANGES.map((c, i) => (
+          <div className="flex flex-col gap-2.5">
+            {skim.risks.map((r, i) => (
               <div
-                key={c.text}
-                className={`flex items-center gap-[11px] px-4 py-3.5 ${
+                key={i}
+                className="flex items-start gap-3.5 rounded-xl border border-line border-l-[3px] border-l-bad bg-surface px-[18px] py-4"
+              >
+                <span
+                  className={`flex-shrink-0 whitespace-nowrap rounded-md px-[9px] py-[3px] text-[11px] font-semibold ${sevClass(
+                    r.sev,
+                  )}`}
+                >
+                  {r.sev}
+                </span>
+                <div className="flex-1">
+                  <div className="text-[14.5px] font-medium leading-[1.5]">
+                    {r.text}
+                  </div>
+                  <div className="mt-[5px] text-[12.5px] text-muted">
+                    {r.who}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {(showChanges || showHighlights) && (
+        <div
+          className={`mt-[26px] grid gap-4 ${
+            showChanges && showHighlights ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
+          }`}
+        >
+          {showChanges && (
+            <div>
+              <SectionLabel className="mb-[11px]">What changed</SectionLabel>
+              <div className="overflow-hidden rounded-card border border-line bg-surface">
+                {skim.changes.map((c, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-[11px] px-4 py-3.5 ${
+                      i > 0 ? "border-t border-line" : ""
+                    }`}
+                  >
+                    <span
+                      className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[7px] text-[13px] font-extrabold"
+                      style={{
+                        background:
+                          c.dir === "up" ? "var(--good-soft)" : "var(--red-tint)",
+                        color: c.dir === "up" ? "var(--good-ink)" : "var(--bad)",
+                      }}
+                    >
+                      {c.dir === "up" ? "↑" : "↓"}
+                    </span>
+                    <span className="text-sm leading-[1.4]">{c.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {showHighlights && (
+            <div>
+              <div className="mb-[11px] text-[12px] font-bold uppercase tracking-[0.06em] text-good">
+                ★ Highlights
+              </div>
+              <div className="overflow-hidden rounded-card border border-line bg-surface">
+                {skim.highlights.map((w, i) => (
+                  <div
+                    key={i}
+                    className={`px-4 py-3.5 ${i > 0 ? "border-t border-line" : ""}`}
+                  >
+                    <div className="text-sm font-medium leading-[1.4]">
+                      {w.text}
+                    </div>
+                    <div className="mt-[3px] text-[12px] text-muted">
+                      {w.who}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {skim.metrics.length > 0 && (
+        <>
+          <SectionLabel className="mb-[11px] mt-[26px]">
+            Key metrics
+          </SectionLabel>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
+            {skim.metrics.map((m, i) => (
+              <MetricCard key={i} m={m} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {skim.byTeam.length > 0 && (
+        <>
+          <SectionLabel className="mb-[11px] mt-[26px]">By team</SectionLabel>
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            {skim.byTeam.map((c, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-3.5 px-[18px] py-3.5 ${
                   i > 0 ? "border-t border-line" : ""
                 }`}
               >
                 <span
-                  className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[7px] text-[13px] font-extrabold"
-                  style={{
-                    background: c.dir === "up" ? "var(--accent-soft)" : "var(--red-tint)",
-                    color: c.dir === "up" ? "var(--good)" : "var(--bad)",
-                  }}
-                >
-                  {c.dir === "up" ? "↑" : "↓"}
-                </span>
-                <span className="text-sm leading-[1.4]">{c.text}</span>
+                  className="h-[9px] w-[9px] flex-shrink-0 rounded-full"
+                  style={{ background: ragColor(c.rag) }}
+                />
+                <div className="w-[150px] flex-shrink-0">
+                  <div className="text-[13.5px] font-semibold">{c.name}</div>
+                  <div className="text-[12px] text-muted">{c.area}</div>
+                </div>
+                <div className="flex-1 text-[13.5px] leading-[1.45]">
+                  {c.line}
+                </div>
               </div>
             ))}
           </div>
-        </div>
-        <div>
-          <div className="mb-[11px] text-[12px] font-bold uppercase tracking-[0.06em] text-good">
-            ★ Highlights
-          </div>
-          <div className="overflow-hidden rounded-card border border-line bg-surface">
-            {ROUNDUP_WINS.map((w, i) => (
-              <div
-                key={w.text}
-                className={`px-4 py-3.5 ${i > 0 ? "border-t border-line" : ""}`}
-              >
-                <div className="text-sm font-medium leading-[1.4]">{w.text}</div>
-                <div className="mt-[3px] text-[12px] text-muted">{w.who}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <SectionLabel className="mb-[11px] mt-[26px]">
-        Key metrics · from connected sheets
-      </SectionLabel>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-        {ROUNDUP_METRICS.map((m) => (
-          <MetricCard key={m.label} m={m} />
-        ))}
-      </div>
-
-      <SectionLabel className="mb-[11px] mt-[26px]">By team</SectionLabel>
-      <div className="overflow-hidden rounded-card border border-line bg-surface">
-        {ROUNDUP_CONTRIBUTORS.map((c, i) => (
-          <div
-            key={c.name}
-            className={`flex items-center gap-3.5 px-[18px] py-3.5 ${
-              i > 0 ? "border-t border-line" : ""
-            }`}
-          >
-            <span
-              className="h-[9px] w-[9px] flex-shrink-0 rounded-full"
-              style={{ background: RAG_COLOR[c.rag] }}
-            />
-            <div className="w-[150px] flex-shrink-0">
-              <div className="text-[13.5px] font-semibold">{c.name}</div>
-              <div className="text-[12px] text-muted">{c.area}</div>
-            </div>
-            <div className="flex-1 text-[13.5px] leading-[1.45]">{c.line}</div>
-          </div>
-        ))}
-      </div>
+        </>
+      )}
     </div>
   );
 }
 
-function Full() {
+function Full({ full }: { full: FullJson }) {
   return (
     <div className="fade-up rounded-card border border-line bg-surface px-6 py-10 md:px-14 md:py-12">
       <div className="text-[12.5px] font-bold tracking-[0.06em] text-muted">
         WEEKLY ROUNDUP
       </div>
       <h1 className="mb-1.5 mt-2.5 font-head text-[32px] font-bold leading-[1.15] tracking-[-0.025em]">
-        {ROUNDUP_FULL.title}
+        {full.title}
       </h1>
       <div className="border-b border-line pb-[22px] text-[13.5px] text-muted">
-        {ROUNDUP_FULL.subtitle}
+        {full.subtitle}
       </div>
 
       <section className="mt-[26px]">
         <div className="font-head text-[16px] font-bold tracking-[0.02em] text-accent">
           Executive summary
         </div>
-        <p className="mt-2.5 text-[15.5px] leading-[1.75]">
-          {ROUNDUP_FULL.execSummary}
-        </p>
+        <p className="mt-2.5 text-[15.5px] leading-[1.75]">{full.execSummary}</p>
       </section>
 
-      <section className="mt-7">
-        <div className="font-head text-[16px] font-bold text-bad">
-          Risks needing attention
-        </div>
-        <ol className="ml-5 mt-2.5 list-decimal text-[15px] leading-[1.7]">
-          {ROUNDUP_FULL.risks.map((r, i) => (
-            <li
-              key={i}
-              className="mb-2 last:mb-0"
-              dangerouslySetInnerHTML={{ __html: r }}
-            />
-          ))}
-        </ol>
-      </section>
-
-      <section className="mt-7">
-        <div className="font-head text-[16px] font-bold">
-          What changed since last week
-        </div>
-        <ul className="ml-5 mt-2.5 list-disc text-[15px] leading-[1.7]">
-          {ROUNDUP_FULL.changed.map((c) => (
-            <li key={c} className="mb-1.5 last:mb-0">
-              {c}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mt-7">
-        <div className="font-head text-[16px] font-bold text-good">Highlights</div>
-        <ul className="ml-5 mt-2.5 list-disc text-[15px] leading-[1.7]">
-          {ROUNDUP_FULL.highlights.map((h) => (
-            <li key={h} className="mb-1.5 last:mb-0">
-              {h}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mt-7">
-        <div className="font-head text-[16px] font-bold">By team</div>
-        <div className="mt-3 flex flex-col">
-          {ROUNDUP_CONTRIBUTORS.map((c) => (
-            <div key={c.name} className="flex gap-3.5 border-t border-line py-3.5">
-              <span
-                className="mt-1.5 h-[9px] w-[9px] flex-shrink-0 rounded-full"
-                style={{ background: RAG_COLOR[c.rag] }}
+      {full.risks.length > 0 && (
+        <section className="mt-7">
+          <div className="font-head text-[16px] font-bold text-bad">
+            Risks needing attention
+          </div>
+          <ol className="ml-5 mt-2.5 list-decimal text-[15px] leading-[1.7]">
+            {full.risks.map((r, i) => (
+              <li
+                key={i}
+                className="mb-2 last:mb-0"
+                dangerouslySetInnerHTML={{ __html: r }}
               />
-              <div>
-                <div className="text-[14.5px] font-bold">
-                  {c.name} ·{" "}
-                  <span className="font-medium text-muted">{c.area}</span>
-                </div>
-                <div className="mt-[3px] text-[14.5px] leading-[1.6]">
-                  {c.line}
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {full.changed.length > 0 && (
+        <section className="mt-7">
+          <div className="font-head text-[16px] font-bold">
+            What changed since last week
+          </div>
+          <ul className="ml-5 mt-2.5 list-disc text-[15px] leading-[1.7]">
+            {full.changed.map((c, i) => (
+              <li key={i} className="mb-1.5 last:mb-0">
+                {c}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {full.highlights.length > 0 && (
+        <section className="mt-7">
+          <div className="font-head text-[16px] font-bold text-good">
+            Highlights
+          </div>
+          <ul className="ml-5 mt-2.5 list-disc text-[15px] leading-[1.7]">
+            {full.highlights.map((h, i) => (
+              <li key={i} className="mb-1.5 last:mb-0">
+                {h}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {full.byTeam.length > 0 && (
+        <section className="mt-7">
+          <div className="font-head text-[16px] font-bold">By team</div>
+          <div className="mt-3 flex flex-col">
+            {full.byTeam.map((c, i) => (
+              <div key={i} className="flex gap-3.5 border-t border-line py-3.5">
+                <span
+                  className="mt-1.5 h-[9px] w-[9px] flex-shrink-0 rounded-full"
+                  style={{ background: ragColor(c.rag) }}
+                />
+                <div>
+                  <div className="text-[14.5px] font-bold">
+                    {c.name} ·{" "}
+                    <span className="font-medium text-muted">{c.area}</span>
+                  </div>
+                  <div className="mt-[3px] text-[14.5px] leading-[1.6]">
+                    {c.line}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <section className="mt-7">
-        <div className="font-head text-[16px] font-bold">Data appendix</div>
-        <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2.5">
-          {ROUNDUP_METRICS.map((m) => (
-            <MetricCard key={m.label} m={m} compact />
-          ))}
-        </div>
-        <div className="mt-3 text-[12px] text-muted">
-          {ROUNDUP_FULL.appendixSource}
-        </div>
-      </section>
+      {full.metrics.length > 0 && (
+        <section className="mt-7">
+          <div className="font-head text-[16px] font-bold">Data appendix</div>
+          <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2.5">
+            {full.metrics.map((m, i) => (
+              <MetricCard key={i} m={m} compact />
+            ))}
+          </div>
+          {full.appendixSource && (
+            <div className="mt-3 text-[12px] text-muted">
+              {full.appendixSource}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

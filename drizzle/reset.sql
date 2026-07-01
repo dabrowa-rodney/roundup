@@ -62,7 +62,7 @@ CREATE TABLE "report_instances" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"template_id" integer NOT NULL,
 	"user_id" integer NOT NULL,
-	"week_start" timestamp NOT NULL,
+	"week_start" date NOT NULL,
 	"status" text DEFAULT 'not_started' NOT NULL,
 	"opened_at" timestamp,
 	"submitted_at" timestamp,
@@ -90,7 +90,7 @@ CREATE TABLE "roundup_recipients" (
 
 CREATE TABLE "roundups" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"week_start" timestamp NOT NULL,
+	"week_start" date NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"skim_json" jsonb,
 	"full_json" jsonb,

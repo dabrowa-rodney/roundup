@@ -3,6 +3,7 @@ import {
   serial,
   text,
   timestamp,
+  date,
   integer,
   boolean,
   jsonb,
@@ -84,7 +85,7 @@ export const reportInstances = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => users.id),
-    weekStart: timestamp("week_start").notNull(),
+    weekStart: date("week_start", { mode: "string" }).notNull(),
     status: text("status").notNull().default("not_started"),
     openedAt: timestamp("opened_at"),
     submittedAt: timestamp("submitted_at"),
@@ -116,7 +117,7 @@ export const answers = pgTable(
 // status: 'pending' | 'draft' | 'sent'
 export const roundups = pgTable("roundups", {
   id: serial("id").primaryKey(),
-  weekStart: timestamp("week_start").notNull().unique(),
+  weekStart: date("week_start", { mode: "string" }).notNull().unique(),
   status: text("status").notNull().default("pending"),
   skimJson: jsonb("skim_json"),
   fullJson: jsonb("full_json"),

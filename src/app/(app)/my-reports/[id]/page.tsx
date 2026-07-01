@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { Screen } from "@/components/screen";
 import { ReportForm } from "@/components/report-form";
-import { mondayOf, weekLabel } from "@/lib/dates";
+import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
 
 export default async function ReportPage({
   params,
@@ -66,7 +66,7 @@ export default async function ReportPage({
   )[0];
   if (!assignment && me.role !== "admin") redirect("/my-reports");
 
-  const monday = mondayOf(new Date());
+  const weekIso = mondayISO(new Date());
 
   // Get-or-create this week's instance for the current user.
   await db
@@ -74,7 +74,7 @@ export default async function ReportPage({
     .values({
       templateId,
       userId: me.id,
-      weekStart: monday,
+      weekStart: weekIso,
       status: "not_started",
       openedAt: new Date(),
     })
@@ -88,7 +88,7 @@ export default async function ReportPage({
         and(
           eq(reportInstances.templateId, templateId),
           eq(reportInstances.userId, me.id),
-          eq(reportInstances.weekStart, monday),
+          eq(reportInstances.weekStart, weekIso),
         ),
       )
       .limit(1)
@@ -113,7 +113,7 @@ export default async function ReportPage({
   return (
     <Screen
       title={template.name}
-      subtitle={`Weekly update · ${weekLabel(monday)}`}
+      subtitle={`Weekly update · ${weekLabel(parseISODate(weekIso))}`}
     >
       <ReportForm
         instanceId={instance.id}
