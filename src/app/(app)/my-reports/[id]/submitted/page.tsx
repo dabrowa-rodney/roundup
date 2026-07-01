@@ -1,10 +1,21 @@
 import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { Check } from "lucide-react";
+import { authOptions } from "@/lib/auth";
+import { db } from "@/db";
+import {
+  answers,
+  questions,
+  reportInstances,
+  reportTemplates,
+  users,
+} from "@/db/schema";
 import { Screen } from "@/components/screen";
 import { SectionLabel } from "@/components/ui";
-import { CURRENT_USER, SUBMITTED_ANSWERS, WEEK_LABEL } from "@/lib/data";
-
-const firstName = CURRENT_USER.name.split(" ")[0];
+import { formatAnswer, parseConfig } from "@/lib/questions";
+import { mondayOf, weekLabel } from "@/lib/dates";
 
 export default async function SubmittedPage({
   params,
@@ -12,9 +23,77 @@ export default async function SubmittedPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const templateId = parseInt(id, 10);
+  if (isNaN(templateId)) notFound();
+
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email?.toLowerCase();
+  if (!email) redirect("/login");
+  const firstName = (session?.user?.name ?? "there").split(" ")[0];
+
+  const me = (
+    await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1)
+  )[0];
+  if (!me) redirect("/login");
+
+  const template = (
+    await db
+      .select()
+      .from(reportTemplates)
+      .where(eq(reportTemplates.id, templateId))
+      .limit(1)
+  )[0];
+  if (!template) notFound();
+
+  const monday = mondayOf(new Date());
+  const instance = (
+    await db
+      .select()
+      .from(reportInstances)
+      .where(
+        and(
+          eq(reportInstances.templateId, templateId),
+          eq(reportInstances.userId, me.id),
+          eq(reportInstances.weekStart, monday),
+        ),
+      )
+      .limit(1)
+  )[0];
+
+  // Only show the confirmation once submitted; otherwise send back to the form.
+  if (
+    !instance ||
+    (instance.status !== "submitted" && instance.status !== "locked")
+  ) {
+    redirect(`/my-reports/${templateId}`);
+  }
+
+  const qs = await db
+    .select()
+    .from(questions)
+    .where(
+      and(eq(questions.templateId, templateId), isNull(questions.archivedAt)),
+    )
+    .orderBy(asc(questions.order));
+
+  const ans = await db
+    .select()
+    .from(answers)
+    .where(eq(answers.instanceId, instance.id));
+  const valueByQ = new Map(ans.map((a) => [a.questionId, a.value]));
+
+  const summary = qs.map((q) => ({
+    id: q.id,
+    q: q.text,
+    a: formatAnswer(q.type, valueByQ.get(q.id), parseConfig(q.config)),
+  }));
 
   return (
-    <Screen title="Report submitted" subtitle={WEEK_LABEL}>
+    <Screen title="Report submitted" subtitle={weekLabel(monday)}>
       <div className="mx-auto max-w-[680px]">
         <div className="rounded-card border border-line bg-surface p-10 text-center">
           <div className="mx-auto mb-[18px] flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
@@ -24,12 +103,13 @@ export default async function SubmittedPage({
             Report submitted
           </div>
           <p className="mt-2 text-[15px] text-muted">
-            Thanks, {firstName} — your Customer Success update for {WEEK_LABEL} is
-            in. It&apos;ll feed into this Sunday&apos;s Roundup.
+            Thanks, {firstName} — your {template.name} update for{" "}
+            {weekLabel(monday)} is in. It&apos;ll feed into this week&apos;s
+            Roundup.
           </p>
           <div className="mt-[22px] flex flex-wrap justify-center gap-[11px]">
             <Link
-              href={`/my-reports/${id}`}
+              href={`/my-reports/${templateId}`}
               className="rounded-[11px] border border-line bg-surface px-5 py-[11px] text-sm font-semibold text-ink"
             >
               Edit my answers
@@ -68,12 +148,18 @@ export default async function SubmittedPage({
           <SectionLabel className="py-4 tracking-[0.05em]">
             Your answers
           </SectionLabel>
-          {SUBMITTED_ANSWERS.map((a) => (
-            <div key={a.q} className="border-t border-line py-3.5">
-              <div className="mb-1 text-[13px] text-muted">{a.q}</div>
-              <div className="text-[14.5px] leading-[1.55]">{a.a}</div>
+          {summary.length === 0 ? (
+            <div className="border-t border-line py-4 text-[13.5px] text-muted">
+              This report has no questions.
             </div>
-          ))}
+          ) : (
+            summary.map((a) => (
+              <div key={a.id} className="border-t border-line py-3.5">
+                <div className="mb-1 text-[13px] text-muted">{a.q}</div>
+                <div className="text-[14.5px] leading-[1.55]">{a.a}</div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </Screen>

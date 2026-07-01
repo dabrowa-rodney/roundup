@@ -143,20 +143,54 @@ function AddQuestionModal({
 }) {
   const [text, setText] = useState("");
   const [type, setType] = useState("long_text");
+  const [helper, setHelper] = useState("");
+  const [optionsText, setOptionsText] = useState("");
+  const [unit, setUnit] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   if (!open) return null;
 
+  const isChoice = type === "single_choice" || type === "multi_choice";
+  const isNumber = type === "number";
+
+  const reset = () => {
+    setText("");
+    setType("long_text");
+    setHelper("");
+    setOptionsText("");
+    setUnit("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const options = optionsText
+      .split("\n")
+      .map((o) => o.trim())
+      .filter(Boolean);
+
+    if (isChoice && options.length === 0) {
+      setError("Add at least one option (one per line).");
+      return;
+    }
+
+    const config: Record<string, unknown> = {};
+    if (helper.trim()) config.helper = helper.trim();
+    if (isChoice) config.options = options;
+    if (isNumber && unit.trim()) config.unit = unit.trim();
+
     setLoading(true);
     setError("");
     try {
       const res = await fetch(`/api/templates/${templateId}/questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), type }),
+        body: JSON.stringify({
+          text: text.trim(),
+          type,
+          config: Object.keys(config).length > 0 ? config : null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -164,8 +198,7 @@ function AddQuestionModal({
         setLoading(false);
         return;
       }
-      setText("");
-      setType("long_text");
+      reset();
       setLoading(false);
       onAdded();
       onClose();
@@ -202,6 +235,47 @@ function AddQuestionModal({
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
+          </div>
+          {isChoice && (
+            <div>
+              <label className="block text-sm font-medium text-muted mb-1">
+                Options *{" "}
+                <span className="font-normal">(one per line)</span>
+              </label>
+              <textarea
+                value={optionsText}
+                onChange={(e) => setOptionsText(e.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                placeholder={"Ahead\nOn track\nAt risk\nBehind"}
+              />
+            </div>
+          )}
+          {isNumber && (
+            <div>
+              <label className="block text-sm font-medium text-muted mb-1">
+                Unit <span className="font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                placeholder="e.g. customers"
+              />
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Helper text <span className="font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={helper}
+              onChange={(e) => setHelper(e.target.value)}
+              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              placeholder="A short hint shown under the question"
+            />
           </div>
           {error && <p className="text-sm text-bad">{error}</p>}
           <div className="flex gap-3 justify-end pt-2">

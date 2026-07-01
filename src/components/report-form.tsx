@@ -1,16 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowLeft, Upload } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, Lock, Upload } from "lucide-react";
 import { Segmented } from "./segmented";
 import {
-  DEFAULT_SUPPORT_SELECTED,
-  FORM_DEFAULTS,
-  RAG_OPTIONS,
-  SUPPORT_CHIPS,
-  TRACK_OPTIONS,
-} from "@/lib/data";
+  parseConfig,
+  RAG_CHOICES,
+  type QuestionConfig,
+} from "@/lib/questions";
+
+interface FormQuestion {
+  id: number;
+  text: string;
+  type: string;
+  config: unknown;
+}
 
 type Variant = "cards" | "doc" | "focus";
 
@@ -20,17 +26,78 @@ const VARIANT_OPTIONS = [
   { value: "focus" as const, label: "Focus" },
 ];
 
-export function ReportForm({ reportId }: { reportId: string }) {
+export function ReportForm({
+  instanceId,
+  templateId,
+  locked,
+  questions,
+  initialValues,
+}: {
+  instanceId: number;
+  templateId: number;
+  locked: boolean;
+  questions: FormQuestion[];
+  initialValues: Record<number, unknown>;
+}) {
+  const router = useRouter();
   const [variant, setVariant] = useState<Variant>("cards");
-  const [rag, setRag] = useState<string>(FORM_DEFAULTS.rag);
-  const [track, setTrack] = useState<string>(FORM_DEFAULTS.track);
-  const [support, setSupport] = useState<Set<string>>(
-    new Set(DEFAULT_SUPPORT_SELECTED),
+  const [values, setValues] = useState<Record<number, unknown>>(initialValues);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
   );
-  const [headlines, setHeadlines] = useState(FORM_DEFAULTS.headlines);
-  const [risks, setRisks] = useState(FORM_DEFAULTS.risks);
-  const [oneLine, setOneLine] = useState(FORM_DEFAULTS.oneLine);
-  const [number, setNumber] = useState(String(FORM_DEFAULTS.number));
+  const [submitting, setSubmitting] = useState(false);
+
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+  const firstRender = useRef(true);
+
+  const setValue = (qid: number, value: unknown) =>
+    setValues((prev) => ({ ...prev, [qid]: value }));
+
+  const save = useCallback(
+    async (submit: boolean): Promise<boolean> => {
+      if (locked) return false;
+      setSaveState("saving");
+      const payload = {
+        submit,
+        answers: questions
+          .map((q) => ({ questionId: q.id, value: valuesRef.current[q.id] }))
+          .filter((a) => a.value !== undefined),
+      };
+      try {
+        const res = await fetch(`/api/instances/${instanceId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error();
+        setSaveState("saved");
+        return true;
+      } catch {
+        setSaveState("error");
+        return false;
+      }
+    },
+    [instanceId, locked, questions],
+  );
+
+  // Debounced autosave whenever answers change.
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (locked) return;
+    const t = setTimeout(() => save(false), 800);
+    return () => clearTimeout(t);
+  }, [values, save, locked]);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    const ok = await save(true);
+    setSubmitting(false);
+    if (ok) router.push(`/my-reports/${templateId}/submitted`);
+  };
 
   const colClass =
     variant === "focus"
@@ -38,23 +105,42 @@ export function ReportForm({ reportId }: { reportId: string }) {
       : variant === "doc"
         ? "mx-auto max-w-[780px] rounded-card border border-line bg-surface px-11 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
         : "mx-auto flex max-w-[780px] flex-col gap-4";
-
   const blockClass =
     variant === "doc"
       ? "border-b border-line py-[26px] last:border-b-0"
       : variant === "focus"
         ? "rounded-card border border-line bg-surface px-8 py-[30px]"
         : "rounded-card border border-line bg-surface px-6 py-[22px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]";
-
   const titleSize = variant === "focus" ? "text-[20px]" : "text-[16px]";
 
-  const toggleSupport = (chip: string) =>
-    setSupport((prev) => {
-      const next = new Set(prev);
-      if (next.has(chip)) next.delete(chip);
-      else next.add(chip);
-      return next;
-    });
+  const saveLabel =
+    saveState === "saving"
+      ? "Saving…"
+      : saveState === "error"
+        ? "Couldn't save — will retry"
+        : saveState === "saved"
+          ? "Saved · drafts autosave"
+          : "Drafts autosave";
+  const saveDotColor =
+    saveState === "error" ? "bg-bad" : saveState === "saving" ? "bg-warn" : "bg-good";
+
+  if (questions.length === 0) {
+    return (
+      <div className="mx-auto max-w-[780px] rounded-card border border-dashed border-line bg-surface p-10 text-center">
+        <div className="font-head text-[18px] font-bold">No questions yet</div>
+        <p className="mx-auto mt-1.5 max-w-[420px] text-[14px] text-muted">
+          This report has no questions. An administrator can add them in the
+          Reports section.
+        </p>
+        <Link
+          href="/my-reports"
+          className="mt-4 inline-block rounded-[10px] border border-line px-4 py-2 text-[13px] font-semibold text-ink hover:border-accent"
+        >
+          ← Back to my reports
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -66,10 +152,16 @@ export function ReportForm({ reportId }: { reportId: string }) {
         >
           <ArrowLeft size={15} /> Back
         </Link>
-        <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-good" aria-hidden />
-          Saved 2 min ago · drafts autosave
-        </span>
+        {locked ? (
+          <span className="flex items-center gap-1.5 text-[12.5px] font-semibold text-muted">
+            <Lock size={13} /> Locked — the window has closed
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
+            <span className={`h-1.5 w-1.5 rounded-full ${saveDotColor}`} aria-hidden />
+            {saveLabel}
+          </span>
+        )}
         <div className="flex-1" />
         <Segmented
           label="Layout"
@@ -79,244 +171,268 @@ export function ReportForm({ reportId }: { reportId: string }) {
         />
       </div>
 
-      <div className={colClass}>
-        {/* Q1 — RAG */}
-        <div className={blockClass}>
-          <QHeader n={1} title="Overall health this week" titleSize={titleSize}>
-            How is your area doing, in a word?
-          </QHeader>
-          <div className="flex gap-2.5">
-            {RAG_OPTIONS.map((opt) => {
-              const active = rag === opt.key;
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => setRag(opt.key)}
-                  className="flex-1 rounded-[13px] p-3.5 text-left"
-                  style={{
-                    border: active
-                      ? `2px solid ${opt.color}`
-                      : "2px solid var(--line)",
-                    background: active ? `${opt.color}14` : "var(--surface)",
-                  }}
-                >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block h-[11px] w-[11px] rounded-full"
-                      style={{ background: opt.color }}
-                    />
-                    <span
-                      className="text-sm font-bold"
-                      style={{ color: active ? opt.color : "var(--ink)" }}
-                    >
-                      {opt.label}
-                    </span>
-                  </span>
-                  <div className="mt-[5px] text-[12px] text-muted">
-                    {opt.sub}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+      <fieldset
+        disabled={locked}
+        className={locked ? "opacity-70" : undefined}
+      >
+        <div className={colClass}>
+          {questions.map((q, i) => (
+            <div key={q.id} className={blockClass}>
+              <QuestionField
+                index={i}
+                question={q}
+                value={values[q.id]}
+                onChange={(v) => setValue(q.id, v)}
+                titleSize={titleSize}
+              />
+            </div>
+          ))}
         </div>
-
-        {/* Q2 — Long text */}
-        <div className={blockClass}>
-          <QHeader
-            n={2}
-            title="Headlines — what should the senior team know?"
-            titleSize={titleSize}
-          >
-            The 2–3 things that matter most this week.
-          </QHeader>
-          <textarea
-            value={headlines}
-            onChange={(e) => setHeadlines(e.target.value)}
-            placeholder="Start typing…"
-            className="min-h-[120px] w-full rounded-xl border border-line bg-bg p-3.5 text-[14.5px] leading-[1.6] text-ink"
-          />
-        </div>
-
-        {/* Q3 — Single choice */}
-        <div className={blockClass}>
-          <QHeader
-            n={3}
-            title="Are we on track for the quarter?"
-            titleSize={titleSize}
-          />
-          <div className="flex flex-wrap gap-[9px]">
-            {TRACK_OPTIONS.map((opt) => {
-              const active = track === opt.key;
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => setTrack(opt.key)}
-                  className={`rounded-[10px] px-[17px] py-2.5 text-[13.5px] ${
-                    active
-                      ? "border-[1.5px] border-accent bg-accent-soft font-bold text-accent"
-                      : "border-[1.5px] border-line bg-surface font-semibold text-ink"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Q4 — Number */}
-        <div className={blockClass}>
-          <QHeader
-            n={4}
-            title="Customers onboarded this week"
-            titleSize={titleSize}
-          >
-            A single number.
-          </QHeader>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              className="w-[120px] rounded-[11px] border border-line bg-bg px-4 py-3 font-head text-[18px] font-bold text-ink"
-            />
-            <span className="text-[13.5px] text-muted">customers</span>
-          </div>
-        </div>
-
-        {/* Q5 — Multi choice */}
-        <div className={blockClass}>
-          <QHeader
-            n={5}
-            title="Where do you need senior support?"
-            titleSize={titleSize}
-          >
-            Select all that apply.
-          </QHeader>
-          <div className="flex flex-wrap gap-[9px]">
-            {SUPPORT_CHIPS.map((chip) => {
-              const active = support.has(chip);
-              return (
-                <button
-                  key={chip}
-                  onClick={() => toggleSupport(chip)}
-                  className={`rounded-full px-[15px] py-[9px] text-[13px] font-semibold ${
-                    active
-                      ? "border-[1.5px] border-accent bg-accent text-accent-ink"
-                      : "border-[1.5px] border-line bg-surface text-ink"
-                  }`}
-                >
-                  {chip}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Q6 — Long text (risk) */}
-        <div className={blockClass}>
-          <QHeader
-            n={6}
-            title="Risks & blockers"
-            titleSize={titleSize}
-            warn
-          >
-            Anything that could trip us up — be honest.
-          </QHeader>
-          <textarea
-            value={risks}
-            onChange={(e) => setRisks(e.target.value)}
-            placeholder="What's at risk?"
-            className="min-h-[96px] w-full rounded-xl border border-line bg-bg p-3.5 text-[14.5px] leading-[1.6] text-ink"
-          />
-        </div>
-
-        {/* Q7 — Short text */}
-        <div className={blockClass}>
-          <QHeader n={7} title="One line for the summary" titleSize={titleSize}>
-            If the senior team read one sentence, this is it.
-          </QHeader>
-          <input
-            type="text"
-            value={oneLine}
-            onChange={(e) => setOneLine(e.target.value)}
-            className="w-full rounded-[11px] border border-line bg-bg px-4 py-3 text-[14.5px] text-ink"
-          />
-        </div>
-
-        {/* Q8 — File / link */}
-        <div className={blockClass}>
-          <QHeader n={8} title="Attach supporting data" titleSize={titleSize}>
-            A file or a link — optional.
-          </QHeader>
-          <div className="flex flex-wrap items-center gap-3">
-            <button className="flex cursor-pointer items-center gap-2.5 rounded-[11px] border border-dashed border-line bg-bg px-[18px] py-3.5 text-[13.5px] text-muted">
-              <Upload size={17} /> Drop a file or browse
-            </button>
-            <span className="text-[13px] text-muted">or</span>
-            <input
-              type="text"
-              placeholder="Paste a link…"
-              className="min-w-[200px] flex-1 rounded-[11px] border border-line bg-bg px-4 py-3 text-sm text-ink"
-            />
-          </div>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-[9px] bg-accent-soft px-[13px] py-2 text-[13px] font-semibold text-accent">
-            <Upload size={14} />
-            {FORM_DEFAULTS.attachment} · attached
-          </div>
-        </div>
-      </div>
+      </fieldset>
 
       {/* Footer */}
-      <div className="mx-auto mt-6 flex max-w-[780px] flex-wrap items-center gap-3.5">
-        <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
-          <span className="h-1.5 w-1.5 rounded-full bg-good" aria-hidden />
-          All changes saved · editable until Sunday 20:00
-        </span>
-        <div className="flex-1" />
-        <button className="rounded-[11px] border border-line bg-surface px-[22px] py-3 text-sm font-semibold text-ink">
-          Save draft
-        </button>
-        <Link
-          href={`/my-reports/${reportId}/submitted`}
-          className="rounded-[11px] bg-accent px-[26px] py-3 text-sm font-bold text-accent-ink"
-        >
-          Submit report
-        </Link>
-      </div>
+      {!locked && (
+        <div className="mx-auto mt-6 flex max-w-[780px] flex-wrap items-center gap-3.5">
+          <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
+            <span className={`h-1.5 w-1.5 rounded-full ${saveDotColor}`} aria-hidden />
+            {saveLabel}
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={() => save(false)}
+            disabled={saveState === "saving"}
+            className="rounded-[11px] border border-line bg-surface px-[22px] py-3 text-sm font-semibold text-ink disabled:opacity-50"
+          >
+            Save draft
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="rounded-[11px] bg-accent px-[26px] py-3 text-sm font-bold text-accent-ink disabled:opacity-60"
+          >
+            {submitting ? "Submitting…" : "Submit report"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function QHeader({
-  n,
-  title,
+function QuestionField({
+  index,
+  question,
+  value,
+  onChange,
   titleSize,
-  warn = false,
-  children,
 }: {
-  n: number;
-  title: string;
+  index: number;
+  question: FormQuestion;
+  value: unknown;
+  onChange: (value: unknown) => void;
   titleSize: string;
-  warn?: boolean;
-  children?: React.ReactNode;
 }) {
+  const config = parseConfig(question.config);
+
   return (
-    <div className="mb-3.5 flex gap-[13px]">
-      <span
-        className={`flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-lg font-head text-[13px] font-bold ${
-          warn ? "bg-red-tint text-bad" : "bg-accent-soft text-accent"
-        }`}
-      >
-        {n}
-      </span>
-      <div>
-        <div className={`font-head font-bold ${titleSize}`}>{title}</div>
-        {children && (
-          <div className="mt-[3px] text-[13.5px] text-muted">{children}</div>
-        )}
+    <>
+      <div className="mb-3.5 flex gap-[13px]">
+        <span className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-lg bg-accent-soft font-head text-[13px] font-bold text-accent">
+          {index + 1}
+        </span>
+        <div>
+          <div className={`font-head font-bold ${titleSize}`}>
+            {question.text}
+          </div>
+          {config.helper && (
+            <div className="mt-[3px] text-[13.5px] text-muted">
+              {config.helper}
+            </div>
+          )}
+        </div>
       </div>
+      <Input question={question} config={config} value={value} onChange={onChange} />
+    </>
+  );
+}
+
+function Input({
+  question,
+  config,
+  value,
+  onChange,
+}: {
+  question: FormQuestion;
+  config: QuestionConfig;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  switch (question.type) {
+    case "rag":
+      return (
+        <div className="flex flex-wrap gap-2.5">
+          {RAG_CHOICES.map((opt) => {
+            const active = value === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => onChange(opt.key)}
+                className="min-w-[140px] flex-1 rounded-[13px] p-3.5 text-left"
+                style={{
+                  border: active ? `2px solid ${opt.color}` : "2px solid var(--line)",
+                  background: active ? `${opt.color}14` : "var(--surface)",
+                }}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className="inline-block h-[11px] w-[11px] rounded-full"
+                    style={{ background: opt.color }}
+                  />
+                  <span
+                    className="text-sm font-bold"
+                    style={{ color: active ? opt.color : "var(--ink)" }}
+                  >
+                    {opt.label}
+                  </span>
+                </span>
+                <div className="mt-[5px] text-[12px] text-muted">{opt.sub}</div>
+              </button>
+            );
+          })}
+        </div>
+      );
+
+    case "long_text":
+      return (
+        <textarea
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Start typing…"
+          className="min-h-[120px] w-full rounded-xl border border-line bg-bg p-3.5 text-[14.5px] leading-[1.6] text-ink"
+        />
+      );
+
+    case "short_text":
+      return (
+        <input
+          type="text"
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-[11px] border border-line bg-bg px-4 py-3 text-[14.5px] text-ink"
+        />
+      );
+
+    case "single_choice": {
+      const options = config.options ?? [];
+      if (options.length === 0) return <NoOptions />;
+      return (
+        <div className="flex flex-wrap gap-[9px]">
+          {options.map((opt) => {
+            const active = value === opt;
+            return (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => onChange(opt)}
+                className={`rounded-[10px] px-[17px] py-2.5 text-[13.5px] ${
+                  active
+                    ? "border-[1.5px] border-accent bg-accent-soft font-bold text-accent"
+                    : "border-[1.5px] border-line bg-surface font-semibold text-ink"
+                }`}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    case "multi_choice": {
+      const options = config.options ?? [];
+      if (options.length === 0) return <NoOptions />;
+      const selected: string[] = Array.isArray(value) ? (value as string[]) : [];
+      const toggle = (opt: string) =>
+        onChange(
+          selected.includes(opt)
+            ? selected.filter((x) => x !== opt)
+            : [...selected, opt],
+        );
+      return (
+        <div className="flex flex-wrap gap-[9px]">
+          {options.map((opt) => {
+            const active = selected.includes(opt);
+            return (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => toggle(opt)}
+                className={`rounded-full px-[15px] py-[9px] text-[13px] font-semibold ${
+                  active
+                    ? "border-[1.5px] border-accent bg-accent text-accent-ink"
+                    : "border-[1.5px] border-line bg-surface text-ink"
+                }`}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    case "number":
+      return (
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            value={
+              typeof value === "number" || typeof value === "string"
+                ? String(value)
+                : ""
+            }
+            onChange={(e) => onChange(e.target.value)}
+            className="w-[120px] rounded-[11px] border border-line bg-bg px-4 py-3 font-head text-[18px] font-bold text-ink"
+          />
+          {config.unit && (
+            <span className="text-[13.5px] text-muted">{config.unit}</span>
+          )}
+        </div>
+      );
+
+    case "file_link":
+      return (
+        <div>
+          <input
+            type="text"
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Paste a link…"
+            className="w-full rounded-[11px] border border-line bg-bg px-4 py-3 text-sm text-ink"
+          />
+          <div className="mt-2 flex items-center gap-1.5 text-[12px] text-muted">
+            <Upload size={13} /> File uploads are coming soon — paste a link for
+            now.
+          </div>
+        </div>
+      );
+
+    default:
+      return (
+        <input
+          type="text"
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-[11px] border border-line bg-bg px-4 py-3 text-[14.5px] text-ink"
+        />
+      );
+  }
+}
+
+function NoOptions() {
+  return (
+    <div className="rounded-[11px] border border-dashed border-line bg-bg px-4 py-3 text-[13px] text-muted">
+      No options configured yet — an administrator can add them in Reports.
     </div>
   );
 }
