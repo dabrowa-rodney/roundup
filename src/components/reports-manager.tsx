@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, GripVertical, Plus, Trash2, X } from "lucide-react";
 import { SectionLabel } from "./ui";
 import { initials, avatarColor } from "@/lib/avatar";
 
@@ -9,6 +9,13 @@ interface TemplateAssignee {
   id: number;
   name: string | null;
   email: string;
+}
+
+interface UserOption {
+  id: number;
+  name: string | null;
+  email: string;
+  role: string;
 }
 
 interface Template {
@@ -212,10 +219,13 @@ function AddQuestionModal({
 export function ReportsManager() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [users, setUsers] = useState<UserOption[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
+  const [savingAssignees, setSavingAssignees] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -242,15 +252,31 @@ export function ReportsManager() {
     } catch {}
   }, []);
 
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users");
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchTemplates();
-  }, [fetchTemplates]);
+    fetchUsers();
+  }, [fetchTemplates, fetchUsers]);
 
   useEffect(() => {
     if (selected !== null) {
       fetchQuestions(selected);
     }
   }, [selected, fetchQuestions]);
+
+  const selectTemplate = (id: number) => {
+    setShowAssign(false);
+    setSelected(id);
+  };
 
   const selectedTemplate = templates.find((t) => t.id === selected);
 
@@ -287,6 +313,28 @@ export function ReportsManager() {
       });
       fetchTemplates();
     } catch {}
+  };
+
+  // Assign / unassign a user to the selected template. The API replaces the
+  // full assignee set, so we send the whole next list of user ids.
+  const toggleAssignee = async (userId: number) => {
+    if (!selected || !selectedTemplate) return;
+    const current = selectedTemplate.assignees.map((a) => a.id);
+    const next = current.includes(userId)
+      ? current.filter((x) => x !== userId)
+      : [...current, userId];
+    setSavingAssignees(true);
+    try {
+      await fetch(`/api/templates/${selected}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeIds: next }),
+      });
+      await fetchTemplates();
+    } catch {
+    } finally {
+      setSavingAssignees(false);
+    }
   };
 
   if (loading) {
@@ -335,7 +383,7 @@ export function ReportsManager() {
                 return (
                   <button
                     key={r.id}
-                    onClick={() => setSelected(r.id)}
+                    onClick={() => selectTemplate(r.id)}
                     className={`flex items-center gap-3.5 rounded-[14px] border bg-surface px-[18px] py-4 text-left transition-colors ${
                       active ? "border-accent" : "border-line hover:border-accent"
                     }`}
@@ -385,13 +433,88 @@ export function ReportsManager() {
               <span className="text-[12px] text-muted">Assigned to</span>
               {selectedTemplate.assignees.length > 0 ? (
                 selectedTemplate.assignees.map((a) => (
-                  <span key={a.id} className="rounded-[7px] bg-accent-soft px-[9px] py-0.5 text-[12px] font-semibold text-accent">
+                  <span
+                    key={a.id}
+                    className="inline-flex items-center gap-1 rounded-[7px] bg-accent-soft py-0.5 pl-[9px] pr-1.5 text-[12px] font-semibold text-accent"
+                  >
                     {a.name || a.email}
+                    <button
+                      onClick={() => toggleAssignee(a.id)}
+                      disabled={savingAssignees}
+                      aria-label={`Unassign ${a.name || a.email}`}
+                      className="rounded-full p-0.5 text-accent/60 hover:bg-accent/10 hover:text-accent disabled:opacity-40"
+                    >
+                      <X size={11} />
+                    </button>
                   </span>
                 ))
               ) : (
-                <span className="text-[12px] text-muted italic">No one assigned</span>
+                <span className="text-[12px] italic text-muted">No one assigned</span>
               )}
+
+              {/* Assign picker */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAssign((v) => !v)}
+                  className="rounded-[7px] border border-dashed border-line px-[9px] py-0.5 text-[12px] text-muted hover:border-accent hover:text-accent"
+                >
+                  + assign
+                </button>
+                {showAssign && (
+                  <>
+                    <button
+                      aria-hidden
+                      tabIndex={-1}
+                      onClick={() => setShowAssign(false)}
+                      className="fixed inset-0 z-40 cursor-default"
+                    />
+                    <div className="absolute left-0 top-full z-50 mt-1.5 max-h-72 w-72 overflow-auto rounded-xl border border-line bg-surface p-1 shadow-xl">
+                      {users.length === 0 ? (
+                        <div className="px-3 py-2 text-[12px] text-muted">
+                          No users found
+                        </div>
+                      ) : (
+                        users.map((u) => {
+                          const assigned = selectedTemplate.assignees.some(
+                            (a) => a.id === u.id,
+                          );
+                          const label = u.name || u.email;
+                          return (
+                            <button
+                              key={u.id}
+                              onClick={() => toggleAssignee(u.id)}
+                              disabled={savingAssignees}
+                              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent-soft disabled:opacity-50"
+                            >
+                              <span
+                                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                                style={{ background: avatarColor(label) }}
+                              >
+                                {initials(label)}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[13px] font-semibold text-ink">
+                                  {label}
+                                </span>
+                                <span className="block truncate text-[11px] text-muted">
+                                  {u.email}
+                                  {u.role === "recipient" ? " · recipient" : ""}
+                                </span>
+                              </span>
+                              {assigned && (
+                                <Check
+                                  size={15}
+                                  className="flex-shrink-0 text-accent"
+                                />
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             <SectionLabel className="mb-2.5 tracking-[0.05em]">Questions</SectionLabel>
