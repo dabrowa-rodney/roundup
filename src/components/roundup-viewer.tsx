@@ -66,13 +66,13 @@ export function RoundupViewer() {
       <div className="mb-[22px] flex flex-wrap items-center gap-3.5">
         <Link
           href="/roundups"
-          className="flex items-center gap-1.5 rounded-[9px] border border-line px-3 py-[7px] text-[13px] font-semibold text-muted"
+          className="flex items-center gap-1.5 rounded-full border border-line px-3 py-[7px] text-[13px] font-semibold text-muted"
         >
           <ArrowLeft size={15} /> All roundups
         </Link>
         <div className="flex-1" />
         <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
-        <button className="flex items-center gap-[7px] rounded-[10px] border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold text-ink">
+        <button className="flex items-center gap-[7px] rounded-full border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold text-ink">
           <Share2 size={15} /> Share
         </button>
       </div>

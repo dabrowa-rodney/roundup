@@ -103,14 +103,14 @@ export function ReportForm({
     variant === "focus"
       ? "mx-auto flex max-w-[640px] flex-col gap-7"
       : variant === "doc"
-        ? "mx-auto max-w-[780px] rounded-card border border-line bg-surface px-11 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+        ? "mx-auto max-w-[780px] rounded-card border border-line bg-surface px-11 py-1.5 shadow-[0_1px_3px_rgba(39,50,94,0.07)]"
         : "mx-auto flex max-w-[780px] flex-col gap-4";
   const blockClass =
     variant === "doc"
       ? "border-b border-line py-[26px] last:border-b-0"
       : variant === "focus"
         ? "rounded-card border border-line bg-surface px-8 py-[30px]"
-        : "rounded-card border border-line bg-surface px-6 py-[22px] shadow-[0_1px_2px_rgba(0,0,0,0.03)]";
+        : "rounded-card border border-line bg-surface px-6 py-[22px] shadow-[0_1px_2px_rgba(39,50,94,0.06)]";
   const titleSize = variant === "focus" ? "text-[20px]" : "text-[16px]";
 
   const saveLabel =
@@ -134,7 +134,7 @@ export function ReportForm({
         </p>
         <Link
           href="/my-reports"
-          className="mt-4 inline-block rounded-[10px] border border-line px-4 py-2 text-[13px] font-semibold text-ink hover:border-accent"
+          className="mt-4 inline-block rounded-full border border-line px-4 py-2 text-[13px] font-semibold text-ink hover:border-accent"
         >
           ← Back to my reports
         </Link>
@@ -148,7 +148,7 @@ export function ReportForm({
       <div className="mx-auto mb-[22px] flex max-w-[780px] flex-wrap items-center gap-4">
         <Link
           href="/my-reports"
-          className="flex items-center gap-1.5 rounded-[9px] border border-line px-3 py-[7px] text-[13px] font-semibold text-muted"
+          className="flex items-center gap-1.5 rounded-full border border-line px-3 py-[7px] text-[13px] font-semibold text-muted"
         >
           <ArrowLeft size={15} /> Back
         </Link>
@@ -201,14 +201,14 @@ export function ReportForm({
           <button
             onClick={() => save(false)}
             disabled={saveState === "saving"}
-            className="rounded-[11px] border border-line bg-surface px-[22px] py-3 text-sm font-semibold text-ink disabled:opacity-50"
+            className="rounded-full border border-line bg-surface px-[22px] py-3 text-sm font-semibold text-ink disabled:opacity-50"
           >
             Save draft
           </button>
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="rounded-[11px] bg-accent px-[26px] py-3 text-sm font-bold text-accent-ink disabled:opacity-60"
+            className="rounded-full bg-accent px-[26px] py-3 text-sm font-bold text-accent-ink disabled:opacity-60"
           >
             {submitting ? "Submitting…" : "Submit report"}
           </button>
@@ -236,7 +236,7 @@ function QuestionField({
   return (
     <>
       <div className="mb-3.5 flex gap-[13px]">
-        <span className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-lg bg-accent-soft font-head text-[13px] font-bold text-accent">
+        <span className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-full bg-accent-soft font-head text-[13px] font-bold text-accent">
           {index + 1}
         </span>
         <div>

@@ -29,7 +29,7 @@ export function DeadlinePill() {
   const countdown = target !== null && now !== null ? format(target - now) : "";
 
   return (
-    <div className="flex flex-shrink-0 items-center gap-[7px] whitespace-nowrap rounded-[10px] border border-line bg-surface px-[13px] py-[7px] text-[12.5px] text-muted">
+    <div className="flex flex-shrink-0 items-center gap-[7px] whitespace-nowrap rounded-full border border-line bg-surface px-[13px] py-[7px] text-[12.5px] text-muted">
       <span className="h-[7px] w-[7px] rounded-full bg-warn" aria-hidden />
       Closes {schedule.closeDay} {schedule.closeTime} ·{" "}
       <span className="font-semibold text-ink">{countdown || "—"}</span>

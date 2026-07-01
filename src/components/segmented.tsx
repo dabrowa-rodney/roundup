@@ -35,7 +35,7 @@ export function Segmented<T extends string>({
               onClick={() => onChange(o.value)}
               className={`cursor-pointer rounded-lg border-none px-[13px] py-1.5 text-[12.5px] font-semibold transition-colors ${
                 active
-                  ? "bg-surface text-ink shadow-[0_1px_3px_rgba(0,0,0,0.1)]"
+                  ? "bg-surface text-ink shadow-[0_1px_3px_rgba(39,50,94,0.14)]"
                   : "bg-transparent text-muted"
               }`}
             >

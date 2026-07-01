@@ -57,7 +57,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
         on ? "justify-end bg-accent" : "justify-start bg-line"
       }`}
     >
-      <span className="h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]" />
+      <span className="h-[18px] w-[18px] rounded-full bg-white shadow-[0_1px_2px_rgba(39,50,94,0.22)]" />
     </button>
   );
 }
@@ -138,7 +138,7 @@ export function SettingsScreen() {
           {session && (
             <button
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="rounded-[10px] border border-line bg-surface px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:border-accent"
+              className="rounded-full border border-line bg-surface px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:border-accent"
             >
               Sign out
             </button>

@@ -41,7 +41,7 @@ export default function RoundupsPage() {
         </div>
         <Link
           href="/roundups/week-25"
-          className="rounded-[11px] bg-accent-ink px-[22px] py-3 text-sm font-bold text-accent"
+          className="rounded-full bg-accent-ink px-[22px] py-3 text-sm font-bold text-accent"
         >
           Generate preview
         </Link>

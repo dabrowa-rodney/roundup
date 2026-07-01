@@ -122,14 +122,14 @@ function InviteModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
+              className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading || !email.trim()}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40"
+              className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40"
             >
               {loading ? "Inviting..." : "Invite"}
             </button>
@@ -238,14 +238,14 @@ function EditUserModal({
             <div className="flex gap-3">
               <button
                 onClick={onClose}
-                className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
+                className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={loading}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40"
+                className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40"
               >
                 {loading ? "Saving..." : "Save"}
               </button>
@@ -316,7 +316,7 @@ export default function TeamPage() {
         <div className="flex-1" />
         <button
           onClick={() => setShowInvite(true)}
-          className="rounded-[11px] bg-accent px-[18px] py-2.5 text-sm font-bold text-accent-ink"
+          className="rounded-full bg-accent px-[18px] py-2.5 text-sm font-bold text-accent-ink"
         >
           + Invite member
         </button>

@@ -110,13 +110,13 @@ export default async function SubmittedPage({
           <div className="mt-[22px] flex flex-wrap justify-center gap-[11px]">
             <Link
               href={`/my-reports/${templateId}`}
-              className="rounded-[11px] border border-line bg-surface px-5 py-[11px] text-sm font-semibold text-ink"
+              className="rounded-full border border-line bg-surface px-5 py-[11px] text-sm font-semibold text-ink"
             >
               Edit my answers
             </Link>
             <Link
               href="/my-reports"
-              className="rounded-[11px] bg-accent px-5 py-[11px] text-sm font-bold text-accent-ink"
+              className="rounded-full bg-accent px-5 py-[11px] text-sm font-bold text-accent-ink"
             >
               Back to my reports
             </Link>

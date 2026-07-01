@@ -119,8 +119,8 @@ function NewTemplateModal({
           </div>
           {error && <p className="text-sm text-bad">{error}</p>}
           <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas">Cancel</button>
-            <button type="submit" disabled={loading || !name.trim()} className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40">
+            <button type="button" onClick={onClose} className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas">Cancel</button>
+            <button type="submit" disabled={loading || !name.trim()} className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40">
               {loading ? "Creating..." : "Create"}
             </button>
           </div>
@@ -279,8 +279,8 @@ function AddQuestionModal({
           </div>
           {error && <p className="text-sm text-bad">{error}</p>}
           <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas">Cancel</button>
-            <button type="submit" disabled={loading || !text.trim()} className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40">
+            <button type="button" onClick={onClose} className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas">Cancel</button>
+            <button type="submit" disabled={loading || !text.trim()} className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40">
               {loading ? "Adding..." : "Add question"}
             </button>
           </div>
@@ -439,7 +439,7 @@ export function ReportsManager() {
             <div className="flex-1" />
             <button
               onClick={() => setShowNewTemplate(true)}
-              className="rounded-[10px] bg-accent px-4 py-[9px] text-[13.5px] font-bold text-accent-ink"
+              className="rounded-full bg-accent px-4 py-[9px] text-[13.5px] font-bold text-accent-ink"
             >
               + New report
             </button>
@@ -638,7 +638,7 @@ export function ReportsManager() {
             <div className="mt-[18px] flex flex-wrap items-center gap-3 border-t border-line pt-4">
               <button
                 onClick={handleArchiveTemplate}
-                className="flex items-center gap-2 rounded-[10px] border border-[#E3C3BC] bg-surface px-[15px] py-[9px] text-[13px] font-semibold text-bad hover:bg-red-tint"
+                className="flex items-center gap-2 rounded-full border border-bad/30 bg-surface px-[15px] py-[9px] text-[13px] font-semibold text-bad hover:bg-red-tint"
               >
                 <Trash2 size={15} /> Archive report
               </button>

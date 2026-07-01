@@ -224,7 +224,7 @@ export default async function MyReportsPage() {
           {cards.map((r) => (
             <div
               key={r.id}
-              className="flex flex-col gap-4 rounded-card border border-line bg-surface p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+              className="flex flex-col gap-4 rounded-card border border-line bg-surface p-6 shadow-[0_1px_2px_rgba(39,50,94,0.06)]"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -243,7 +243,7 @@ export default async function MyReportsPage() {
                 <span className="text-[12.5px] text-muted">{r.edited}</span>
                 <Link
                   href={r.href}
-                  className="rounded-[10px] bg-accent px-[18px] py-[9px] text-[13.5px] font-bold text-accent-ink transition-opacity hover:opacity-90"
+                  className="rounded-full bg-accent px-[18px] py-[9px] text-[13.5px] font-bold text-accent-ink transition-opacity hover:opacity-90"
                 >
                   {r.cta} →
                 </Link>

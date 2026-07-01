@@ -117,7 +117,7 @@ export function DataSourcesTable() {
             <button
               onClick={() => save(i)}
               disabled={isSaving}
-              className={`whitespace-nowrap rounded-[9px] text-[13px] font-semibold ${
+              className={`whitespace-nowrap rounded-full text-[13px] font-semibold ${
                 dirty
                   ? "bg-accent px-4 py-2 font-bold text-accent-ink"
                   : "border border-line bg-surface px-3.5 py-2 text-muted"
