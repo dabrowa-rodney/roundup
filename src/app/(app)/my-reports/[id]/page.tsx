@@ -9,11 +9,13 @@ import {
   reportAssignees,
   reportInstances,
   reportTemplates,
+  settings,
   users,
 } from "@/db/schema";
 import { Screen } from "@/components/screen";
 import { ReportForm } from "@/components/report-form";
 import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
+import { isWeekClosed, type ScheduleSettings } from "@/lib/lifecycle";
 
 export default async function ReportPage({
   params,
@@ -110,6 +112,17 @@ export default async function ReportPage({
   const initialValues: Record<number, unknown> = {};
   for (const a of existing) initialValues[a.questionId] = a.value;
 
+  // Editing is blocked once the week's close time has passed (or it's locked).
+  const s = (await db.select().from(settings).limit(1))[0];
+  const sched: ScheduleSettings = {
+    closeDay: s?.closeDay ?? "Sunday",
+    closeTime: s?.closeTime ?? "20:00",
+    openDay: s?.openDay ?? "Monday",
+    openTime: s?.openTime ?? "01:00",
+    timezone: s?.timezone ?? "Europe/London",
+  };
+  const locked = instance.status === "locked" || isWeekClosed(weekIso, sched);
+
   return (
     <Screen
       title={template.name}
@@ -118,7 +131,7 @@ export default async function ReportPage({
       <ReportForm
         instanceId={instance.id}
         templateId={templateId}
-        locked={instance.status === "locked"}
+        locked={locked}
         questions={qs.map((q) => ({
           id: q.id,
           text: q.text,

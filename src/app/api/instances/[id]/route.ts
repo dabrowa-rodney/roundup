@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { answers, reportInstances, users } from "@/db/schema";
+import { answers, reportInstances, settings, users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { isWeekClosed, type ScheduleSettings } from "@/lib/lifecycle";
 
 // PATCH /api/instances/[id] — save answers (autosave / draft) or submit.
 // Owner-only. Rejected once the instance is locked.
@@ -46,7 +47,15 @@ export async function PATCH(
   if (instance.userId !== me.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (instance.status === "locked") {
+  const settingsRow = (await db.select().from(settings).limit(1))[0];
+  const sched: ScheduleSettings = {
+    closeDay: settingsRow?.closeDay ?? "Sunday",
+    closeTime: settingsRow?.closeTime ?? "20:00",
+    openDay: settingsRow?.openDay ?? "Monday",
+    openTime: settingsRow?.openTime ?? "01:00",
+    timezone: settingsRow?.timezone ?? "Europe/London",
+  };
+  if (instance.status === "locked" || isWeekClosed(instance.weekStart, sched)) {
     return NextResponse.json(
       { error: "This report is locked and can no longer be edited." },
       { status: 403 },
