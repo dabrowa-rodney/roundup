@@ -10,7 +10,7 @@ async function requireAdmin(email: string) {
   const caller = await db
     .select({ role: users.role })
     .from(users)
-    .where(eq(users.email, email))
+    .where(eq(users.email, email.toLowerCase()))
     .limit(1);
   return caller.length > 0 && caller[0].role === "admin";
 }

@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
 import { eq, isNull, sql } from "drizzle-orm";
+import { authOptions } from "@/lib/auth";
 import { Screen } from "@/components/screen";
 import { db } from "@/db";
 import {
@@ -8,6 +11,7 @@ import {
   reportTemplates,
   roundups,
   settings,
+  users,
 } from "@/db/schema";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
@@ -37,6 +41,20 @@ function StatusPill({ status }: { status: Status }) {
 }
 
 export default async function RoundupsPage() {
+  // Roundups are a leadership view — not for contributors.
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email?.toLowerCase();
+  const me = email
+    ? (
+        await db
+          .select({ role: users.role })
+          .from(users)
+          .where(eq(users.email, email))
+          .limit(1)
+      )[0]
+    : undefined;
+  if (me?.role !== "admin") redirect("/my-reports");
+
   const weekIso = mondayISO(new Date());
 
   // Close schedule (for the banner), with defaults if unset.

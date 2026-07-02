@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { eq } from "drizzle-orm";
 import { ArrowLeft, FileText } from "lucide-react";
@@ -34,6 +35,8 @@ export default async function RoundupViewerPage({
       )[0]
     : undefined;
   const isAdmin = me?.role === "admin";
+  // Roundups are a leadership view — not for contributors.
+  if (!isAdmin) redirect("/my-reports");
 
   const roundup = (
     await db

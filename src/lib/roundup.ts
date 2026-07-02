@@ -51,11 +51,16 @@ export interface SkimJson {
   byTeam: TeamItem[];
 }
 
+export interface FullRisk {
+  lead: string; // the owning area, shown bold
+  text: string;
+}
+
 export interface FullJson {
   title: string;
   subtitle: string;
   execSummary: string;
-  risks: string[]; // may contain <strong> lead-ins
+  risks: FullRisk[];
   changed: string[];
   highlights: string[];
   byTeam: TeamItem[];
@@ -101,13 +106,6 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 function ragToSeverity(rag: Rag | null): Severity {
   return rag === "red" ? "High" : rag === "amber" ? "Medium" : "Low";
 }
@@ -138,7 +136,7 @@ export function compileRoundup(input: CompileInput): RoundupContent {
   const skimRisks: RiskItem[] = [];
   const skimHighlights: WinItem[] = [];
   const metricsMap = new Map<string, MetricItem>();
-  const fullRisks: string[] = [];
+  const fullRisks: FullRisk[] = [];
   const fullHighlights: string[] = [];
 
   for (const c of contributors) {
@@ -159,7 +157,7 @@ export function compileRoundup(input: CompileInput): RoundupContent {
           text: v,
           who: `${c.area} · ${c.name}`,
         });
-        fullRisks.push(`<strong>${escapeHtml(c.area)}.</strong> ${escapeHtml(v)}`);
+        fullRisks.push({ lead: c.area, text: v });
       } else if (a.type === "long_text" && WIN_RE.test(a.text)) {
         skimHighlights.push({ text: v, who: c.area });
         fullHighlights.push(`${v} (${c.area})`);

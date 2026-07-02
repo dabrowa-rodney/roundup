@@ -9,7 +9,7 @@ async function requireAdmin(email: string) {
   const caller = await db
     .select({ role: users.role })
     .from(users)
-    .where(eq(users.email, email))
+    .where(eq(users.email, email.toLowerCase()))
     .limit(1);
   return caller.length > 0 && caller[0].role === "admin";
 }
@@ -95,8 +95,22 @@ export async function POST(
   return NextResponse.json({ question: inserted[0] }, { status: 201 });
 }
 
-// PATCH /api/templates/[id]/questions — update or reorder questions (batch)
-export async function PATCH(req: NextRequest) {
+const VALID_TYPES = [
+  "rag",
+  "long_text",
+  "short_text",
+  "single_choice",
+  "multi_choice",
+  "number",
+  "file_link",
+];
+
+// PATCH /api/templates/[id]/questions — update or archive a question (scoped to
+// this template so an admin can't mutate another template's questions by id).
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -105,13 +119,27 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const { id } = await params;
+  const templateId = parseInt(id, 10);
+  if (isNaN(templateId)) {
+    return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
+  }
+
   const body = await req.json();
 
   // Single question update: { questionId, text?, type?, config?, order? }
   if (body.questionId) {
     const updates: Record<string, unknown> = {};
     if (body.text !== undefined) updates.text = body.text.trim();
-    if (body.type !== undefined) updates.type = body.type;
+    if (body.type !== undefined) {
+      if (!VALID_TYPES.includes(body.type)) {
+        return NextResponse.json(
+          { error: `Invalid type. Must be one of: ${VALID_TYPES.join(", ")}` },
+          { status: 400 },
+        );
+      }
+      updates.type = body.type;
+    }
     if (body.config !== undefined) updates.config = body.config;
     if (body.order !== undefined) updates.order = body.order;
 
@@ -119,7 +147,12 @@ export async function PATCH(req: NextRequest) {
       await db
         .update(questions)
         .set(updates)
-        .where(eq(questions.id, body.questionId));
+        .where(
+          and(
+            eq(questions.id, body.questionId),
+            eq(questions.templateId, templateId),
+          ),
+        );
     }
 
     return NextResponse.json({ success: true });
@@ -130,7 +163,12 @@ export async function PATCH(req: NextRequest) {
     await db
       .update(questions)
       .set({ archivedAt: new Date() })
-      .where(eq(questions.id, body.archiveQuestionId));
+      .where(
+        and(
+          eq(questions.id, body.archiveQuestionId),
+          eq(questions.templateId, templateId),
+        ),
+      );
 
     return NextResponse.json({ success: true });
   }

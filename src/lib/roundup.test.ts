@@ -52,9 +52,10 @@ describe("compileRoundup", () => {
       text: "Two deals slipped to Q3.",
       who: "Sales · Priya Shah",
     });
-    expect(full.risks[0]).toBe(
-      "<strong>Sales.</strong> Two deals slipped to Q3.",
-    );
+    expect(full.risks[0]).toEqual({
+      lead: "Sales",
+      text: "Two deals slipped to Q3.",
+    });
   });
 
   it("routes highlights, numbers and the one-liner", () => {

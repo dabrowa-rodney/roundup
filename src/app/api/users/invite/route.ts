@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const caller = await db
     .select({ role: users.role })
     .from(users)
-    .where(eq(users.email, session.user.email))
+    .where(eq(users.email, session.user.email.toLowerCase()))
     .limit(1);
 
   if (!caller.length || caller[0].role !== "admin") {

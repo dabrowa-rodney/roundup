@@ -280,11 +280,9 @@ function Full({ full }: { full: FullJson }) {
           </div>
           <ol className="ml-5 mt-2.5 list-decimal text-[15px] leading-[1.7]">
             {full.risks.map((r, i) => (
-              <li
-                key={i}
-                className="mb-2 last:mb-0"
-                dangerouslySetInnerHTML={{ __html: r }}
-              />
+              <li key={i} className="mb-2 last:mb-0">
+                <strong>{r.lead}.</strong> {r.text}
+              </li>
             ))}
           </ol>
         </section>
