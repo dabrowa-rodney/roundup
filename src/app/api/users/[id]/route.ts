@@ -6,6 +6,14 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
 
+async function adminCount(): Promise<number> {
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.role, "admin"));
+  return rows.length;
+}
+
 // PATCH /api/users/[id] — update user role, name, etc.
 export async function PATCH(
   req: NextRequest,
@@ -37,6 +45,22 @@ export async function PATCH(
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
   if (body.role && ["admin", "contributor", "recipient"].includes(body.role)) {
+    // Don't allow demoting the last remaining administrator.
+    if (body.role !== "admin") {
+      const target = (
+        await db
+          .select({ role: users.role })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1)
+      )[0];
+      if (target?.role === "admin" && (await adminCount()) <= 1) {
+        return NextResponse.json(
+          { error: "There must be at least one administrator." },
+          { status: 400 },
+        );
+      }
+    }
     updates.role = body.role;
   }
   if (body.name !== undefined) {
@@ -89,13 +113,35 @@ export async function DELETE(
     return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
   }
 
-  const deleted = await db
-    .delete(users)
-    .where(eq(users.id, userId))
-    .returning();
-
-  if (!deleted.length) {
+  const target = (
+    await db
+      .select({ role: users.role })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+  )[0];
+  if (!target) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+  // Don't allow removing the last remaining administrator.
+  if (target.role === "admin" && (await adminCount()) <= 1) {
+    return NextResponse.json(
+      { error: "There must be at least one administrator." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    await db.delete(users).where(eq(users.id, userId));
+  } catch {
+    // Users with report history are referenced by report_instances (no cascade).
+    return NextResponse.json(
+      {
+        error:
+          "This member has report history and can't be deleted. Set their role to Recipient instead.",
+      },
+      { status: 409 },
+    );
   }
 
   return NextResponse.json({ success: true });
