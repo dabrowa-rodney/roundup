@@ -91,6 +91,7 @@ export interface CompileInput {
   totalExpected: number;
   generatedLabel: string; // "Generated Wed 1 Jul, 10:12"
   contributors: ContributorReport[];
+  sheetMetrics?: MetricItem[]; // pulled from connected Google Sheets
 }
 
 const RISK_RE = /risk|blocker|concern|issue|problem/i;
@@ -176,7 +177,9 @@ export function compileRoundup(input: CompileInput): RoundupContent {
     }
   }
 
-  const metrics = [...metricsMap.values()];
+  // Connected-sheet metrics first, then any number-answer metrics.
+  const sheetMetrics = input.sheetMetrics ?? [];
+  const metrics = [...sheetMetrics, ...metricsMap.values()];
 
   // Severity order: High → Medium → Low
   const sevRank: Record<Severity, number> = { High: 0, Medium: 1, Low: 2 };
@@ -230,9 +233,11 @@ export function compileRoundup(input: CompileInput): RoundupContent {
     byTeam,
     metrics,
     appendixSource:
-      metrics.length > 0
-        ? "Figures taken from this week's submitted reports."
-        : "",
+      sheetMetrics.length > 0
+        ? "Figures pulled from connected Google Sheets."
+        : metrics.length > 0
+          ? "Figures taken from this week's submitted reports."
+          : "",
   };
 
   return { skim, full };

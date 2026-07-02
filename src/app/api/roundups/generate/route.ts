@@ -16,7 +16,9 @@ import {
   compileRoundup,
   type AnswerInput,
   type ContributorReport,
+  type MetricItem,
 } from "@/lib/roundup";
+import { fetchSheetMetrics } from "@/lib/sheets";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -128,6 +130,23 @@ export async function POST(req: NextRequest) {
         .where(isNull(reportTemplates.archivedAt))
     )[0]?.count ?? 0;
 
+  // Pull metrics from every active template's connected Google Sheet.
+  const srcRows = await db
+    .select({ url: reportTemplates.dataSourceUrl })
+    .from(reportTemplates)
+    .where(isNull(reportTemplates.archivedAt));
+  const sheetUrls = [
+    ...new Set(
+      srcRows
+        .map((r) => r.url?.trim())
+        .filter((u): u is string => !!u && u.length > 0),
+    ),
+  ];
+  const sheetMetrics: MetricItem[] = [];
+  for (const url of sheetUrls) {
+    sheetMetrics.push(...(await fetchSheetMetrics(url)));
+  }
+
   const now = new Date();
   const content = compileRoundup({
     weekNumber: weekNumberLabel(parseISODate(weekStart)),
@@ -136,6 +155,7 @@ export async function POST(req: NextRequest) {
     totalExpected,
     generatedLabel: generatedLabel(now),
     contributors,
+    sheetMetrics,
   });
 
   await db
