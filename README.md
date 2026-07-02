@@ -43,9 +43,29 @@ The Google OAuth client's **Authorized redirect URI** must include
 npm install
 npm run dev          # http://localhost:3000  (or ./dev-server.sh)
 npm run build        # production build
+npm test             # run the Vitest unit suite
+npm run lint         # eslint
 npm run db:generate  # regenerate Drizzle migration from src/db/schema.ts
 npm run db:push      # sync schema to the database (interactive)
 ```
+
+## Tests
+
+Vitest covers the pure logic (no DB/server needed):
+[`dates`](src/lib/dates.test.ts) (week math), [`lifecycle`](src/lib/lifecycle.test.ts)
+(timezone-aware close/reopen, GMT/BST), [`roundup`](src/lib/roundup.test.ts)
+(the deterministic compiler), [`questions`](src/lib/questions.test.ts) and
+[`avatar`](src/lib/avatar.test.ts). Run with `npm test`.
+
+## Operations
+
+- **Health:** `GET /api/health` returns `{ status, database }` and a 503 if the
+  database is unreachable.
+- **Weekly cron:** `GET /api/cron/lifecycle` (registered in `vercel.json`, daily)
+  persists locks for closed weeks and opens the new week. Set **`CRON_SECRET`** in
+  Vercel so the scheduled call authenticates; an admin can also trigger it manually.
+  Locking is *derived* from the schedule at request time, so reports go read-only
+  at close regardless of cron timing.
 
 ## Database
 
