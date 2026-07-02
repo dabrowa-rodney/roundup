@@ -262,7 +262,7 @@ export function SettingsScreen() {
         <p className="mb-3.5 mt-1.5 text-[13.5px] text-muted">
           Who receives the generated summary each week.
         </p>
-        <p className="text-[13px] text-muted">Manage recipients on the Team page by setting their role to &quot;Recipient&quot;.</p>
+        <p className="text-[13px] text-muted">Manage recipients on the Team page by setting their role to &quot;Recipient&quot;. Admins always receive it.</p>
       </div>
     </div>
   );

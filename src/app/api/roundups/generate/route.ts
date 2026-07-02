@@ -220,10 +220,11 @@ export async function POST(req: NextRequest) {
         .onConflictDoNothing()
         .returning({ id: emailLog.id });
       if (claimed.length > 0) {
+        // Recipient-role users plus admins, who always receive the Roundup.
         const recipients = await db
           .select({ email: users.email })
           .from(users)
-          .where(eq(users.role, "recipient"));
+          .where(inArray(users.role, ["recipient", "admin"]));
         const msg = roundupEmail({
           weekLabel: `${weekNumberLabel(parseISODate(weekStart))} · ${weekRange(parseISODate(weekStart))}`,
           headline: content.skim.headline || "This week's Roundup is ready.",

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { emailLog, roundupRecipients, roundups, users } from "@/db/schema";
@@ -52,11 +52,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Recipients are managed on the Team page via the "recipient" role.
+  // Recipients are managed on the Team page via the "recipient" role;
+  // admins always receive the Roundup as well.
   const recipients = await db
     .select({ id: users.id, email: users.email })
     .from(users)
-    .where(eq(users.role, "recipient"));
+    .where(inArray(users.role, ["recipient", "admin"]));
 
   const now = new Date();
 
