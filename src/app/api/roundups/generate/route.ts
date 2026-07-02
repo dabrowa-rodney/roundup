@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
@@ -13,13 +13,18 @@ import {
   users,
 } from "@/db/schema";
 import {
-  compileRoundup,
   type AnswerInput,
   type ContributorReport,
   type MetricItem,
+  type SkimJson,
 } from "@/lib/roundup";
+import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
 import { fetchSheetMetrics } from "@/lib/sheets";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
+
+// Allow up to 60s — the AI generation step calls Claude (with a 55s client-side
+// timeout that falls back to the deterministic compiler before we hit this cap).
+export const maxDuration = 60;
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = [
@@ -147,16 +152,35 @@ export async function POST(req: NextRequest) {
     sheetMetrics.push(...(await fetchSheetMetrics(url)));
   }
 
-  const now = new Date();
-  const content = compileRoundup({
-    weekNumber: weekNumberLabel(parseISODate(weekStart)),
-    range: weekRange(parseISODate(weekStart)),
-    reportsIn: insts.length,
-    totalExpected,
-    generatedLabel: generatedLabel(now),
-    contributors,
-    sheetMetrics,
+  // Up to two prior weeks' Roundups, for week-over-week narrative.
+  const priorRows = await db
+    .select({ weekStart: roundups.weekStart, skimJson: roundups.skimJson })
+    .from(roundups)
+    .where(lt(roundups.weekStart, weekStart))
+    .orderBy(desc(roundups.weekStart))
+    .limit(2);
+  const priorWeeks: PriorWeek[] = priorRows.map((r) => {
+    const skim = r.skimJson as SkimJson;
+    return {
+      week: skim.week,
+      headline: skim.headline,
+      metrics: skim.metrics ?? [],
+    };
   });
+
+  const now = new Date();
+  const content = await generateRoundupAI(
+    {
+      weekNumber: weekNumberLabel(parseISODate(weekStart)),
+      range: weekRange(parseISODate(weekStart)),
+      reportsIn: insts.length,
+      totalExpected,
+      generatedLabel: generatedLabel(now),
+      contributors,
+      sheetMetrics,
+    },
+    priorWeeks,
+  );
 
   await db
     .insert(roundups)
