@@ -52,6 +52,8 @@ export default async function RoundupViewerPage({
         <RoundupViewer
           skim={roundup.skimJson as SkimJson}
           full={roundup.fullJson as FullJson}
+          week={weekIso}
+          sent={roundup.status === "sent"}
         />
       ) : (
         <NotGenerated week={weekIso} isAdmin={isAdmin} />

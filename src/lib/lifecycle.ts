@@ -90,6 +90,16 @@ export function closeInstant(weekStartISO: string, s: ScheduleSettings): Date {
   return instantFor(weekStartISO, s.closeDay, s.closeTime, s.timezone);
 }
 
+/** UTC instant for an arbitrary day+time slot within a week (e.g. a reminder). */
+export function slotInstant(
+  weekStartISO: string,
+  day: string,
+  time: string,
+  timezone: string,
+): Date {
+  return instantFor(weekStartISO, day, time, timezone);
+}
+
 export function reopenInstant(weekStartISO: string, s: ScheduleSettings): Date {
   return instantFor(weekStartISO, s.openDay, s.openTime, s.timezone);
 }

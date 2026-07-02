@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Share2 } from "lucide-react";
+import { ArrowLeft, Check, Send } from "lucide-react";
 import { Segmented } from "./segmented";
 import { SectionLabel } from "./ui";
 import type {
@@ -65,12 +65,68 @@ function MetricCard({ m, compact = false }: { m: MetricItem; compact?: boolean }
   );
 }
 
+function SendButton({ week, initialSent }: { week: string; initialSent: boolean }) {
+  const [state, setState] = useState<"idle" | "sending" | "sent">(
+    initialSent ? "sent" : "idle",
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const send = async () => {
+    setState("sending");
+    setError(null);
+    try {
+      const res = await fetch("/api/roundups/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setState("sent");
+      } else {
+        setState("idle");
+        setError(data.error || "Couldn't send — try again.");
+      }
+    } catch {
+      setState("idle");
+      setError("Couldn't send — try again.");
+    }
+  };
+
+  if (state === "sent") {
+    return (
+      <span className="flex items-center gap-[7px] rounded-full bg-good-soft px-4 py-2.5 text-[13.5px] font-semibold text-good-ink">
+        <Check size={15} /> Sent to recipients
+      </span>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2.5">
+      {error && (
+        <span className="text-[12.5px] font-medium text-bad">{error}</span>
+      )}
+      <button
+        onClick={send}
+        disabled={state === "sending"}
+        className="flex items-center gap-[7px] rounded-full bg-accent px-4 py-2.5 text-[13.5px] font-bold text-accent-ink disabled:opacity-60"
+      >
+        <Send size={15} />
+        {state === "sending" ? "Sending…" : "Send to recipients"}
+      </button>
+    </div>
+  );
+}
+
 export function RoundupViewer({
   skim,
   full,
+  week,
+  sent = false,
 }: {
   skim: SkimJson;
   full: FullJson;
+  week?: string;
+  sent?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>("skim");
 
@@ -85,9 +141,7 @@ export function RoundupViewer({
         </Link>
         <div className="flex-1" />
         <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
-        <button className="flex items-center gap-[7px] rounded-full border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold text-ink">
-          <Share2 size={15} /> Share
-        </button>
+        {week && <SendButton week={week} initialSent={sent} />}
       </div>
 
       {mode === "skim" ? <Skim skim={skim} /> : <Full full={full} />}

@@ -24,6 +24,7 @@ DROP TABLE IF EXISTS "questions" CASCADE;
 DROP TABLE IF EXISTS "report_assignees" CASCADE;
 DROP TABLE IF EXISTS "report_templates" CASCADE;
 DROP TABLE IF EXISTS "roundup_recipients" CASCADE;
+DROP TABLE IF EXISTS "email_log" CASCADE;
 DROP TABLE IF EXISTS "roundups" CASCADE;
 DROP TABLE IF EXISTS "settings" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
@@ -95,8 +96,18 @@ CREATE TABLE "roundups" (
 	"skim_json" jsonb,
 	"full_json" jsonb,
 	"generated_at" timestamp,
+	"sent_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "roundups_week_start_unique" UNIQUE("week_start")
+);
+
+CREATE TABLE "email_log" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"kind" text NOT NULL,
+	"week_start" date NOT NULL,
+	"recipient_count" integer DEFAULT 0 NOT NULL,
+	"sent_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "email_log_kind_week_start_unique" UNIQUE("kind","week_start")
 );
 
 CREATE TABLE "settings" (

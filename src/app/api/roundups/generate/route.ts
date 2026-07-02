@@ -5,13 +5,16 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   answers,
+  emailLog,
   questions,
   reportAssignees,
   reportInstances,
   reportTemplates,
   roundups,
+  settings,
   users,
 } from "@/db/schema";
+import { emailConfigured, roundupEmail, sendEmail } from "@/lib/email";
 import {
   type AnswerInput,
   type ContributorReport,
@@ -200,6 +203,43 @@ export async function POST(req: NextRequest) {
         generatedAt: now,
       },
     });
+
+  // "Roundup ready" — if the Settings toggle is on, notify recipients that
+  // this week's summary has been generated (at most once per week).
+  if (emailConfigured()) {
+    const settingsRow = (
+      await db
+        .select({ roundupReady: settings.reminderRoundupReady })
+        .from(settings)
+        .limit(1)
+    )[0];
+    if (settingsRow?.roundupReady) {
+      const claimed = await db
+        .insert(emailLog)
+        .values({ kind: "roundup_ready", weekStart })
+        .onConflictDoNothing()
+        .returning({ id: emailLog.id });
+      if (claimed.length > 0) {
+        const recipients = await db
+          .select({ email: users.email })
+          .from(users)
+          .where(eq(users.role, "recipient"));
+        const msg = roundupEmail({
+          weekLabel: `${weekNumberLabel(parseISODate(weekStart))} · ${weekRange(parseISODate(weekStart))}`,
+          headline: content.skim.headline || "This week's Roundup is ready.",
+          weekIso: weekStart,
+        });
+        let emailed = 0;
+        for (const r of recipients) {
+          if (await sendEmail({ to: r.email, ...msg })) emailed++;
+        }
+        await db
+          .update(emailLog)
+          .set({ recipientCount: emailed })
+          .where(eq(emailLog.id, claimed[0].id));
+      }
+    }
+  }
 
   return NextResponse.json({ ok: true, reportsIn: insts.length });
 }

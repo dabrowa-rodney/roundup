@@ -122,6 +122,7 @@ export const roundups = pgTable("roundups", {
   skimJson: jsonb("skim_json"),
   fullJson: jsonb("full_json"),
   generatedAt: timestamp("generated_at"),
+  sentAt: timestamp("sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -138,6 +139,22 @@ export const roundupRecipients = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
   },
   (t) => [unique().on(t.roundupId, t.userId)],
+);
+
+// ── Email log (one row per batch actually sent) ────────
+// kind: 'reminder1' | 'reminder2' | 'roundup_ready' | 'roundup_sent'
+// The (kind, weekStart) unique key is what makes reminder sending idempotent —
+// however often the cron endpoint is hit, each slot fires at most once a week.
+export const emailLog = pgTable(
+  "email_log",
+  {
+    id: serial("id").primaryKey(),
+    kind: text("kind").notNull(),
+    weekStart: date("week_start", { mode: "string" }).notNull(),
+    recipientCount: integer("recipient_count").notNull().default(0),
+    sentAt: timestamp("sent_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.kind, t.weekStart)],
 );
 
 // ── Platform settings (single row) ─────────────────────

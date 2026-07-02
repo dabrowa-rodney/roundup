@@ -1,0 +1,132 @@
+// Email sending via Resend's REST API (https://resend.com/docs/api-reference).
+//
+// Mirrors the ANTHROPIC_API_KEY pattern: if RESEND_API_KEY is unset, every
+// send silently no-ops (returns false) so the platform keeps working without
+// email until the key is added. EMAIL_FROM defaults to Resend's shared test
+// sender so the key alone is enough to start testing.
+
+const FROM_DEFAULT = "Roundup <onboarding@resend.dev>";
+
+export function emailConfigured(): boolean {
+  return !!process.env.RESEND_API_KEY;
+}
+
+/** Absolute URL for links in emails (falls back to the auth base URL). */
+export function appUrl(path: string): string {
+  const base = (
+    process.env.APP_URL ??
+    process.env.NEXTAUTH_URL ??
+    ""
+  ).replace(/\/$/, "");
+  return `${base}${path}`;
+}
+
+export interface EmailMessage {
+  to: string;
+  subject: string;
+  html: string;
+}
+
+/** Send one email. Never throws; returns whether the send succeeded. */
+export async function sendEmail(msg: EmailMessage): Promise<boolean> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return false;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM || FROM_DEFAULT,
+        to: [msg.to],
+        subject: msg.subject,
+        html: msg.html,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ── Templates ──────────────────────────────────────────
+// Minimal inline-styled HTML (email clients ignore stylesheets). Wonde-ish
+// palette: primary #4368FA, ink #27325E.
+
+function shell(body: string): string {
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#F4F6FB;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#27325E;">
+    <div style="max-width:560px;margin:0 auto;padding:32px 20px;">
+      <div style="font-size:18px;font-weight:800;letter-spacing:-0.02em;margin-bottom:18px;">Roundup</div>
+      <div style="background:#FFFFFF;border:1px solid #E3E8F4;border-radius:14px;padding:26px 28px;">
+        ${body}
+      </div>
+      <div style="font-size:12px;color:#8792AD;margin-top:16px;">
+        Sent by Roundup, the weekly update platform.
+      </div>
+    </div>
+  </body>
+</html>`;
+}
+
+function button(href: string, label: string): string {
+  return `<a href="${href}" style="display:inline-block;background:#4368FA;color:#FFFFFF;font-weight:700;font-size:14px;text-decoration:none;border-radius:999px;padding:11px 22px;margin-top:18px;">${label}</a>`;
+}
+
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Reminder to a contributor who hasn't submitted this week's report. */
+export function reminderEmail(opts: {
+  name: string;
+  weekLabel: string; // "Week 27 · 29 Jun–5 Jul"
+  reportNames: string[];
+  closeLabel: string; // "Sunday 20:00"
+}): { subject: string; html: string } {
+  const first = escapeHtml(opts.name.split(" ")[0] || "there");
+  const reports = opts.reportNames.map(escapeHtml).join(", ");
+  return {
+    subject: `Reminder: your weekly update is due (${opts.weekLabel})`,
+    html: shell(`
+      <p style="margin:0 0 12px;font-size:15px;">Hi ${first},</p>
+      <p style="margin:0 0 12px;font-size:14px;line-height:1.55;">
+        A quick nudge — your update${opts.reportNames.length === 1 ? "" : "s"}
+        <strong>${reports}</strong> for <strong>${escapeHtml(opts.weekLabel)}</strong>
+        ${opts.reportNames.length === 1 ? "hasn't" : "haven't"} been submitted yet.
+      </p>
+      <p style="margin:0;font-size:14px;line-height:1.55;">
+        The week closes <strong>${escapeHtml(opts.closeLabel)}</strong>.
+      </p>
+      ${button(appUrl("/my-reports"), "Complete my update")}
+    `),
+  };
+}
+
+/** The weekly Roundup, sent (or announced) to recipients. */
+export function roundupEmail(opts: {
+  weekLabel: string; // "Week 27 · 29 Jun–5 Jul"
+  headline: string;
+  weekIso: string; // "2026-06-29"
+}): { subject: string; html: string } {
+  return {
+    subject: `Roundup — ${opts.weekLabel}`,
+    html: shell(`
+      <div style="font-size:12px;font-weight:700;letter-spacing:0.05em;color:#8792AD;text-transform:uppercase;margin-bottom:10px;">
+        ${escapeHtml(opts.weekLabel)}
+      </div>
+      <p style="margin:0;font-size:16px;line-height:1.5;font-weight:600;">
+        ${escapeHtml(opts.headline)}
+      </p>
+      ${button(appUrl(`/roundups/${opts.weekIso}`), "Read the Roundup")}
+    `),
+  };
+}
