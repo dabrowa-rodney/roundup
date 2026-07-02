@@ -102,18 +102,38 @@ export function extractMetrics(rows: string[][]): MetricItem[] {
   return metrics;
 }
 
-/** Fetch a connected sheet and return its metrics (never throws). */
-export async function fetchSheetMetrics(url: string): Promise<MetricItem[]> {
+export type SheetReason =
+  | "ok"
+  | "invalid_url"
+  | "not_shared"
+  | "http_error"
+  | "fetch_failed";
+
+export interface SheetPreview {
+  ok: boolean;
+  reason: SheetReason;
+  metrics: MetricItem[];
+}
+
+/** Fetch + parse a connected sheet, distinguishing failure from "no metrics". */
+export async function fetchSheetPreview(url: string): Promise<SheetPreview> {
   const csvUrl = sheetCsvUrl(url);
-  if (!csvUrl) return [];
+  if (!csvUrl) return { ok: false, reason: "invalid_url", metrics: [] };
   try {
     const res = await fetch(csvUrl, { signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return [];
+    if (!res.ok) return { ok: false, reason: "http_error", metrics: [] };
     const text = await res.text();
     // A private/redirected sheet returns an HTML sign-in page, not CSV.
-    if (text.trimStart().startsWith("<")) return [];
-    return extractMetrics(parseCsv(text));
+    if (text.trimStart().startsWith("<")) {
+      return { ok: false, reason: "not_shared", metrics: [] };
+    }
+    return { ok: true, reason: "ok", metrics: extractMetrics(parseCsv(text)) };
   } catch {
-    return [];
+    return { ok: false, reason: "fetch_failed", metrics: [] };
   }
+}
+
+/** Fetch a connected sheet and return its metrics (never throws). */
+export async function fetchSheetMetrics(url: string): Promise<MetricItem[]> {
+  return (await fetchSheetPreview(url)).metrics;
 }
