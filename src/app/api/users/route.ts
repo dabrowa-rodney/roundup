@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { users, reportAssignees, reportTemplates } from "@/db/schema";
-import { eq, sql, count } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 // GET /api/users — list all users with their assigned report areas
 export async function GET() {

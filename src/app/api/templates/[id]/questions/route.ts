@@ -96,10 +96,7 @@ export async function POST(
 }
 
 // PATCH /api/templates/[id]/questions — update or reorder questions (batch)
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

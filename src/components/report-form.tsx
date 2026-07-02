@@ -48,7 +48,9 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false);
 
   const valuesRef = useRef(values);
-  valuesRef.current = values;
+  useEffect(() => {
+    valuesRef.current = values;
+  }, [values]);
   const firstRender = useRef(true);
 
   const setValue = (qid: number, value: unknown) =>
