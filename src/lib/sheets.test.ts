@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractMetrics, parseCsv, sheetCsvUrl } from "./sheets";
+import { extractMetrics, extractSeries, parseCsv, sheetCsvUrl } from "./sheets";
 
 describe("sheetCsvUrl", () => {
   it("builds the CSV export URL from a share link", () => {
@@ -67,5 +67,46 @@ describe("extractMetrics", () => {
 
   it("returns nothing for an empty sheet", () => {
     expect(extractMetrics(parseCsv(""))).toEqual([]);
+  });
+});
+
+describe("extractSeries", () => {
+  it("returns full numeric history with the unit prefix", () => {
+    const csv = [
+      "Month-Year,Datasync monthly revenue (MRR)",
+      'Nov 2025,"£350,000.00"',
+      'Dec 2025,"£375,641.58"',
+      'Jan 2026,"£407,398.82"',
+    ].join("\n");
+    const series = extractSeries(parseCsv(csv));
+    expect(series).toEqual([
+      {
+        label: "Datasync monthly revenue (MRR)",
+        unit: "£",
+        points: [
+          { x: "Nov 2025", y: 350000 },
+          { x: "Dec 2025", y: 375641.58 },
+          { x: "Jan 2026", y: 407398.82 },
+        ],
+      },
+    ]);
+  });
+
+  it("skips blanks and non-numeric cells, drops series under 3 points", () => {
+    const csv = [
+      "Period,NPS,Owner",
+      "Jan,41,Ada",
+      "Feb,,Ada",
+      "Mar,44,Ada",
+      "Apr,46,Ada",
+    ].join("\n");
+    const series = extractSeries(parseCsv(csv));
+    expect(series).toHaveLength(1); // "Owner" column is non-numeric
+    expect(series[0].label).toBe("NPS");
+    expect(series[0].points.map((p: { x: string }) => p.x)).toEqual([
+      "Jan",
+      "Mar",
+      "Apr",
+    ]);
   });
 });

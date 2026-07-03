@@ -19,10 +19,11 @@ import {
   type AnswerInput,
   type ContributorReport,
   type MetricItem,
+  type MetricSeries,
   type SkimJson,
 } from "@/lib/roundup";
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
-import { fetchSheetMetrics } from "@/lib/sheets";
+import { fetchSheetData } from "@/lib/sheets";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
 // Allow up to 60s — the AI generation step calls Claude (with a 55s client-side
@@ -151,8 +152,11 @@ export async function POST(req: NextRequest) {
     ),
   ];
   const sheetMetrics: MetricItem[] = [];
+  const sheetSeries: MetricSeries[] = [];
   for (const url of sheetUrls) {
-    sheetMetrics.push(...(await fetchSheetMetrics(url)));
+    const data = await fetchSheetData(url);
+    sheetMetrics.push(...data.metrics);
+    sheetSeries.push(...data.series);
   }
 
   // Up to two prior weeks' Roundups, for week-over-week narrative.
@@ -181,6 +185,7 @@ export async function POST(req: NextRequest) {
       generatedLabel: generatedLabel(now),
       contributors,
       sheetMetrics,
+      sheetSeries,
     },
     priorWeeks,
   );

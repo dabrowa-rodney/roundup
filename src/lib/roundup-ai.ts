@@ -21,6 +21,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   compileRoundup,
   type ChangeItem,
+  type ChartItem,
   type CompileInput,
   type FullRisk,
   type MetricItem,
@@ -39,13 +40,22 @@ export interface PriorWeek {
 
 // The narrative-only shape Claude returns. Facts (metrics, RAG, counts) are
 // deliberately absent — those come from compileRoundup().
-interface AiNarrative {
+export interface AiNarrative {
   headline: string;
   execSummary: string;
   risks: { area: string; sev: Severity; text: string }[];
   highlights: { area: string; text: string }[];
   changes: { dir: "up" | "down"; text: string }[];
   teamLines: { name: string; line: string }[];
+  // Charts reference a sheet series by exact label; the data itself is copied
+  // from the series in mergeNarrative, never from the model.
+  charts: {
+    metric: string;
+    title: string;
+    type: "line" | "bar";
+    note: string;
+    showInSkim: boolean;
+  }[];
 }
 
 const NARRATIVE_SCHEMA = {
@@ -126,6 +136,43 @@ const NARRATIVE_SCHEMA = {
         required: ["name", "line"],
       },
     },
+    charts: {
+      type: "array",
+      description:
+        "Up to 3 charts from the connected-sheet series, chosen only when the trend genuinely helps leadership (a clear movement, inflection or milestone). Return [] when nothing is chart-worthy.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          metric: {
+            type: "string",
+            description:
+              "The EXACT series label as given in CONNECTED-SHEET SERIES.",
+          },
+          title: {
+            type: "string",
+            description: "Short, leadership-ready chart title.",
+          },
+          type: {
+            type: "string",
+            enum: ["line", "bar"],
+            description:
+              "line for trends over many periods, bar for a handful of discrete periods.",
+          },
+          note: {
+            type: "string",
+            description:
+              "One-line takeaway shown under the chart ('' if the chart speaks for itself).",
+          },
+          showInSkim: {
+            type: "boolean",
+            description:
+              "true only for the single most important chart of the week.",
+          },
+        },
+        required: ["metric", "title", "type", "note", "showInSkim"],
+      },
+    },
   },
   required: [
     "headline",
@@ -134,6 +181,7 @@ const NARRATIVE_SCHEMA = {
     "highlights",
     "changes",
     "teamLines",
+    "charts",
   ],
 } as const;
 
@@ -171,6 +219,20 @@ function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
     }
   }
 
+  if (input.sheetSeries && input.sheetSeries.length > 0) {
+    lines.push(
+      ``,
+      `CONNECTED-SHEET SERIES (history, oldest → newest — available for charts):`,
+    );
+    for (const s of input.sheetSeries) {
+      const pts = s.points.slice(-24); // bound the prompt for long histories
+      lines.push(
+        `- ${s.label}${s.unit ? ` (${s.unit})` : ""}: ` +
+          pts.map((p) => `${p.x}: ${p.y}`).join("; "),
+      );
+    }
+  }
+
   if (priorWeeks.length > 0) {
     lines.push(``, `PRIOR WEEKS (for week-over-week comparison):`);
     for (const p of priorWeeks) {
@@ -188,6 +250,7 @@ function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
     `- Use each contributor's exact name in teamLines.`,
     `- For "changes", only compare against the prior weeks shown; return an empty array if there is nothing meaningful to compare.`,
     `- Attribute each risk and highlight to the correct area.`,
+    `- Charts: propose at most 3, and only where the series genuinely helps the story — a clear trend, an inflection, or a milestone crossed. Reference the series by its exact label. Mark at most one chart showInSkim. If nothing is chart-worthy, return an empty charts array.`,
     `- Write for busy executives: direct, specific, no filler or hedging.`,
   );
 
@@ -232,8 +295,9 @@ export async function generateRoundupAI(
   }
 }
 
-/** Overlay Claude's prose onto the deterministic skeleton (facts win). */
-function mergeNarrative(
+/** Overlay Claude's prose onto the deterministic skeleton (facts win).
+ *  Exported for tests — production callers go through generateRoundupAI. */
+export function mergeNarrative(
   input: CompileInput,
   base: RoundupContent,
   ai: AiNarrative,
@@ -269,6 +333,29 @@ function mergeNarrative(
     line: lineByName.get(t.name) ?? t.line,
   }));
 
+  // Charts: the AI picked series + wrote titles/notes; the points come straight
+  // from the sheet series (an unknown label means the chart is dropped).
+  const seriesByLabel = new Map(
+    (input.sheetSeries ?? []).map((s) => [s.label, s]),
+  );
+  let skimSlotUsed = false;
+  const charts: ChartItem[] = [];
+  for (const c of ai.charts) {
+    const s = seriesByLabel.get(c.metric);
+    if (!s) continue;
+    if (charts.length >= 3) break;
+    const inSkim = c.showInSkim && !skimSlotUsed;
+    if (inSkim) skimSlotUsed = true;
+    charts.push({
+      title: c.title || s.label,
+      type: c.type,
+      unit: s.unit,
+      points: s.points,
+      note: c.note,
+      showInSkim: inSkim,
+    });
+  }
+
   const fullRisks: FullRisk[] = ai.risks.map((r) => ({
     lead: r.area,
     text: r.text,
@@ -286,6 +373,7 @@ function mergeNarrative(
       changes,
       highlights,
       byTeam,
+      charts: charts.filter((c) => c.showInSkim),
     },
     full: {
       ...base.full,
@@ -294,6 +382,7 @@ function mergeNarrative(
       changed,
       highlights: fullHighlights,
       byTeam,
+      charts,
     },
   };
 }

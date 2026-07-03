@@ -7,7 +7,7 @@
 // For PRIVATE sheets this won't work — that needs a Google service account + the
 // Sheets API (a later upgrade); this path relies on "anyone with the link can view".
 
-import type { MetricItem } from "./roundup";
+import type { MetricItem, MetricSeries } from "./roundup";
 
 /** Build the CSV-export URL for a Google Sheets link, or null if not one. */
 export function sheetCsvUrl(url: string): string | null {
@@ -102,6 +102,32 @@ export function extractMetrics(rows: string[][]): MetricItem[] {
   return metrics;
 }
 
+/** Full numeric history per data column — the source data for charts.
+ *  Only series with 3+ numeric points are returned (fewer can't show a trend). */
+export function extractSeries(rows: string[][]): MetricSeries[] {
+  const clean = rows.filter((r) => r.some((c) => c.trim() !== ""));
+  if (clean.length < 2) return [];
+  const header = clean[0];
+  const series: MetricSeries[] = [];
+
+  for (let col = 1; col < header.length; col++) {
+    const label = (header[col] ?? "").trim();
+    if (!label) continue;
+    const points: { x: string; y: number }[] = [];
+    let unit = "";
+    for (const r of clean.slice(1)) {
+      const raw = (r[col] ?? "").trim();
+      if (!raw) continue;
+      const n = parseNumber(raw);
+      if (n === null) continue;
+      points.push({ x: (r[0] ?? "").trim(), y: n });
+      unit = unitPrefix(raw) || unit;
+    }
+    if (points.length >= 3) series.push({ label, unit, points });
+  }
+  return series;
+}
+
 export type SheetReason =
   | "ok"
   | "invalid_url"
@@ -115,22 +141,40 @@ export interface SheetPreview {
   metrics: MetricItem[];
 }
 
-/** Fetch + parse a connected sheet, distinguishing failure from "no metrics". */
-export async function fetchSheetPreview(url: string): Promise<SheetPreview> {
+/** Fetch + parse a sheet's rows, or a reason it couldn't be read. */
+async function fetchSheetRows(
+  url: string,
+): Promise<{ ok: true; rows: string[][] } | { ok: false; reason: SheetReason }> {
   const csvUrl = sheetCsvUrl(url);
-  if (!csvUrl) return { ok: false, reason: "invalid_url", metrics: [] };
+  if (!csvUrl) return { ok: false, reason: "invalid_url" };
   try {
     const res = await fetch(csvUrl, { signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return { ok: false, reason: "http_error", metrics: [] };
+    if (!res.ok) return { ok: false, reason: "http_error" };
     const text = await res.text();
     // A private/redirected sheet returns an HTML sign-in page, not CSV.
     if (text.trimStart().startsWith("<")) {
-      return { ok: false, reason: "not_shared", metrics: [] };
+      return { ok: false, reason: "not_shared" };
     }
-    return { ok: true, reason: "ok", metrics: extractMetrics(parseCsv(text)) };
+    return { ok: true, rows: parseCsv(text) };
   } catch {
-    return { ok: false, reason: "fetch_failed", metrics: [] };
+    return { ok: false, reason: "fetch_failed" };
   }
+}
+
+/** Fetch + parse a connected sheet, distinguishing failure from "no metrics". */
+export async function fetchSheetPreview(url: string): Promise<SheetPreview> {
+  const res = await fetchSheetRows(url);
+  if (!res.ok) return { ok: false, reason: res.reason, metrics: [] };
+  return { ok: true, reason: "ok", metrics: extractMetrics(res.rows) };
+}
+
+/** Fetch a connected sheet's metrics AND full series in one read (never throws). */
+export async function fetchSheetData(
+  url: string,
+): Promise<{ metrics: MetricItem[]; series: MetricSeries[] }> {
+  const res = await fetchSheetRows(url);
+  if (!res.ok) return { metrics: [], series: [] };
+  return { metrics: extractMetrics(res.rows), series: extractSeries(res.rows) };
 }
 
 /** Fetch a connected sheet and return its metrics (never throws). */

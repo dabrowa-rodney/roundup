@@ -30,6 +30,26 @@ export interface MetricItem {
   delta: string;
   good: boolean;
 }
+export interface ChartPoint {
+  x: string; // period label from the sheet ("Jan 2026")
+  y: number;
+}
+/** A full metric series pulled from a connected sheet (chart source data). */
+export interface MetricSeries {
+  label: string;
+  unit: string; // leading prefix from the sheet values, e.g. "£" ("" if none)
+  points: ChartPoint[];
+}
+/** A chart the AI chose to include. Points are copied verbatim from the
+ *  sheet series — the AI only selects the series and writes title/note. */
+export interface ChartItem {
+  title: string;
+  type: "line" | "bar";
+  unit: string;
+  points: ChartPoint[];
+  note: string; // one-line takeaway ("" if none)
+  showInSkim: boolean;
+}
 export interface TeamItem {
   name: string;
   area: string;
@@ -49,6 +69,7 @@ export interface SkimJson {
   highlights: WinItem[];
   metrics: MetricItem[];
   byTeam: TeamItem[];
+  charts?: ChartItem[]; // AI-selected trends (absent on older roundups)
 }
 
 export interface FullRisk {
@@ -65,6 +86,7 @@ export interface FullJson {
   highlights: string[];
   byTeam: TeamItem[];
   metrics: MetricItem[];
+  charts?: ChartItem[]; // AI-selected trends (absent on older roundups)
   appendixSource: string;
 }
 
@@ -92,6 +114,7 @@ export interface CompileInput {
   generatedLabel: string; // "Generated Wed 1 Jul, 10:12"
   contributors: ContributorReport[];
   sheetMetrics?: MetricItem[]; // pulled from connected Google Sheets
+  sheetSeries?: MetricSeries[]; // full sheet history (chart source data)
 }
 
 const RISK_RE = /risk|blocker|concern|issue|problem/i;

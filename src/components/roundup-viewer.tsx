@@ -7,6 +7,7 @@ import { ArrowLeft, Check, RefreshCw, Send } from "lucide-react";
 import { Segmented } from "./segmented";
 import { SectionLabel } from "./ui";
 import type {
+  ChartItem,
   FullJson,
   MetricItem,
   Rag,
@@ -60,6 +61,104 @@ function MetricCard({ m, compact = false }: { m: MetricItem; compact?: boolean }
           style={{ color: m.good ? "var(--good)" : "var(--bad)" }}
         >
           {m.delta}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtVal(unit: string, n: number): string {
+  return `${unit}${n.toLocaleString("en-GB", {
+    maximumFractionDigits: Math.abs(n) >= 1000 ? 0 : 2,
+  })}`;
+}
+
+/** Lightweight SVG line/bar chart for AI-selected sheet series. */
+function ChartCard({ c }: { c: ChartItem }) {
+  const W = 560;
+  const H = 150;
+  const padT = 10;
+  const padB = 24;
+  const padX = 4;
+  const innerW = W - padX * 2;
+  const innerH = H - padT - padB;
+
+  const ys = c.points.map((p) => p.y);
+  const max = Math.max(...ys);
+  // Lines read best zoomed to the data; bars need a zero baseline.
+  const min = c.type === "bar" ? Math.min(0, ...ys) : Math.min(...ys);
+  const span = max - min || 1;
+  const n = c.points.length;
+  const px = (i: number) =>
+    padX + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const py = (v: number) => padT + innerH - ((v - min) / span) * innerH;
+
+  const first = c.points[0];
+  const last = c.points[n - 1];
+  const linePts = c.points.map((p, i) => `${px(i)},${py(p.y)}`).join(" ");
+  const areaPath =
+    `M ${px(0)} ${padT + innerH} ` +
+    c.points.map((p, i) => `L ${px(i)} ${py(p.y)}`).join(" ") +
+    ` L ${px(n - 1)} ${padT + innerH} Z`;
+  const barW = (innerW / n) * 0.62;
+
+  return (
+    <div className="rounded-xl border border-line bg-surface px-[18px] pb-3.5 pt-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-[13.5px] font-semibold">{c.title}</div>
+        <div className="whitespace-nowrap font-head text-[15px] font-bold">
+          {fmtVal(c.unit, last.y)}
+        </div>
+      </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="mt-2 block w-full"
+        role="img"
+        aria-label={`${c.title}: ${c.points.length} points from ${fmtVal(c.unit, first.y)} to ${fmtVal(c.unit, last.y)}`}
+      >
+        {/* top (max) and bottom (min) guides */}
+        <line x1={padX} y1={py(max)} x2={W - padX} y2={py(max)} stroke="var(--line)" strokeDasharray="3 4" />
+        <line x1={padX} y1={py(min)} x2={W - padX} y2={py(min)} stroke="var(--line)" />
+        {c.type === "line" ? (
+          <>
+            <path d={areaPath} fill="var(--accent)" opacity="0.08" />
+            <polyline
+              points={linePts}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <circle cx={px(n - 1)} cy={py(last.y)} r="4" fill="var(--accent)" />
+          </>
+        ) : (
+          c.points.map((p, i) => (
+            <rect
+              key={i}
+              x={px(i) - barW / 2}
+              y={py(p.y)}
+              width={barW}
+              height={Math.max(1.5, padT + innerH - py(p.y))}
+              rx="3"
+              fill="var(--accent)"
+              opacity={i === n - 1 ? 1 : 0.45}
+            />
+          ))
+        )}
+        <text x={padX} y={py(max) - 4} fontSize="10.5" fill="var(--muted)">
+          {fmtVal(c.unit, max)}
+        </text>
+        <text x={padX} y={H - 6} fontSize="10.5" fill="var(--muted)">
+          {first.x}
+        </text>
+        <text x={W - padX} y={H - 6} fontSize="10.5" fill="var(--muted)" textAnchor="end">
+          {last.x}
+        </text>
+      </svg>
+      {c.note && (
+        <div className="mt-1.5 text-[12.5px] leading-[1.5] text-muted">
+          {c.note}
         </div>
       )}
     </div>
@@ -319,6 +418,17 @@ function Skim({ skim }: { skim: SkimJson }) {
         </>
       )}
 
+      {(skim.charts?.length ?? 0) > 0 && (
+        <>
+          <SectionLabel className="mb-[11px] mt-[26px]">Trends</SectionLabel>
+          <div className="flex flex-col gap-3">
+            {skim.charts!.map((c, i) => (
+              <ChartCard key={i} c={c} />
+            ))}
+          </div>
+        </>
+      )}
+
       {skim.byTeam.length > 0 && (
         <>
           <SectionLabel className="mb-[11px] mt-[26px]">By team</SectionLabel>
@@ -435,6 +545,17 @@ function Full({ full }: { full: FullJson }) {
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {(full.charts?.length ?? 0) > 0 && (
+        <section className="mt-7">
+          <div className="font-head text-[16px] font-bold">Trends</div>
+          <div className="mt-3 flex flex-col gap-3">
+            {full.charts!.map((c, i) => (
+              <ChartCard key={i} c={c} />
             ))}
           </div>
         </section>
