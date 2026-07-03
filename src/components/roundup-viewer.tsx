@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Check, Send } from "lucide-react";
+import { ArrowLeft, Check, RefreshCw, Send } from "lucide-react";
 import { Segmented } from "./segmented";
 import { SectionLabel } from "./ui";
 import type {
@@ -62,6 +63,47 @@ function MetricCard({ m, compact = false }: { m: MetricItem; compact?: boolean }
         </div>
       )}
     </div>
+  );
+}
+
+function RegenerateButton({ week }: { week: string }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const regenerate = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch("/api/roundups/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ week }),
+      });
+      if (res.ok) {
+        router.refresh(); // pull the fresh skim/full into the server page
+      } else {
+        setError(true);
+      }
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={regenerate}
+      disabled={loading}
+      title="Rebuild this Roundup from the latest submitted reports"
+      className={`flex items-center gap-[7px] rounded-full border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-60 ${
+        error ? "text-bad" : "text-ink"
+      }`}
+    >
+      <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+      {loading ? "Regenerating…" : error ? "Failed — retry" : "Regenerate"}
+    </button>
   );
 }
 
@@ -141,6 +183,7 @@ export function RoundupViewer({
         </Link>
         <div className="flex-1" />
         <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
+        {week && !sent && <RegenerateButton week={week} />}
         {week && <SendButton week={week} initialSent={sent} />}
       </div>
 
