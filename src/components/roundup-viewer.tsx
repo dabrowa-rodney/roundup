@@ -211,6 +211,7 @@ function SendButton({ week, initialSent }: { week: string; initialSent: boolean 
     initialSent ? "sent" : "idle",
   );
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const send = async () => {
     setState("sending");
@@ -224,6 +225,16 @@ function SendButton({ week, initialSent }: { week: string; initialSent: boolean 
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setState("sent");
+        // Published, but be honest when the emails themselves didn't go out.
+        if (data.emailConfigured === false) {
+          setWarning("Published, but no emails sent — RESEND_API_KEY isn't set.");
+        } else if (data.recipients === 0) {
+          setWarning("Published, but there are no recipients yet.");
+        } else if (data.emailed < data.recipients) {
+          setWarning(
+            `Emailed ${data.emailed} of ${data.recipients} recipients — the rest failed (check the sender domain in Resend).`,
+          );
+        }
       } else {
         setState("idle");
         setError(data.error || "Couldn't send — try again.");
@@ -236,9 +247,16 @@ function SendButton({ week, initialSent }: { week: string; initialSent: boolean 
 
   if (state === "sent") {
     return (
-      <span className="flex items-center gap-[7px] rounded-full bg-good-soft px-4 py-2.5 text-[13.5px] font-semibold text-good-ink">
-        <Check size={15} /> Sent to recipients
-      </span>
+      <div className="flex items-center gap-2.5">
+        {warning && (
+          <span className="max-w-[340px] text-right text-[12.5px] font-medium text-warn-ink">
+            {warning}
+          </span>
+        )}
+        <span className="flex items-center gap-[7px] whitespace-nowrap rounded-full bg-good-soft px-4 py-2.5 text-[13.5px] font-semibold text-good-ink">
+          <Check size={15} /> {warning ? "Published" : "Sent to recipients"}
+        </span>
+      </div>
     );
   }
   return (
