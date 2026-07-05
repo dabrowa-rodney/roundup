@@ -1,36 +1,7 @@
-import { db } from "@/db";
-import { settings } from "@/db/schema";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 
-const SCHEDULE_DEFAULT = {
-  closeDay: "Sunday",
-  closeTime: "20:00",
-  timezone: "Europe/London",
-};
-
-async function getCloseSchedule() {
-  try {
-    const row = (await db.select().from(settings).limit(1))[0];
-    if (row) {
-      return {
-        closeDay: row.closeDay,
-        closeTime: row.closeTime,
-        timezone: row.timezone,
-      };
-    }
-  } catch {
-    // fall through to defaults if the DB isn't reachable
-  }
-  return SCHEDULE_DEFAULT;
-}
-
-function tzLabel(timezone: string): string {
-  return timezone.split("/").pop()?.replace(/_/g, " ") ?? timezone;
-}
-
-export default async function LoginPage() {
-  const { closeDay, closeTime, timezone } = await getCloseSchedule();
-  const closeLine = `Updates close ${closeDay}s at ${closeTime} · ${tzLabel(timezone)}`;
+export default function LoginPage() {
+  const closeLine = "Weekly updates in, leadership summary out.";
 
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[1.05fr_0.95fr]">
@@ -70,17 +41,18 @@ export default async function LoginPage() {
             Welcome back
           </div>
           <p className="mb-[30px] mt-2 text-[15px] text-muted">
-            Sign in to file your weekly update.
+            Sign in to your workspace — or create one for your organisation.
           </p>
           <GoogleSignInButton />
           <div className="my-6 flex items-center gap-3 text-[13px] text-muted">
             <div className="h-px flex-1 bg-line" />
-            company workspace
+            new to Roundup?
             <div className="h-px flex-1 bg-line" />
           </div>
           <p className="text-center text-[13px] leading-[1.6] text-muted">
-            Only invited members of your organisation can sign in. Speak to an
-            administrator if you need access.
+            Sign in with Google and you can set up your organisation in under a
+            minute. Joining an existing team? Ask an administrator to invite
+            your email first.
           </p>
         </div>
       </div>

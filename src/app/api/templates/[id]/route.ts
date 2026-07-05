@@ -1,30 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { reportTemplates, reportAssignees, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { getSessionUser, type SessionUser } from "@/lib/session";
 
-// Helper: check admin
-async function requireAdmin(email: string) {
-  const caller = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.email, email.toLowerCase()))
+/** The template, only if it belongs to the caller's org. */
+async function ownedTemplate(me: SessionUser, templateId: number) {
+  const rows = await db
+    .select({ id: reportTemplates.id })
+    .from(reportTemplates)
+    .where(
+      and(
+        eq(reportTemplates.id, templateId),
+        eq(reportTemplates.orgId, me.orgId),
+      ),
+    )
     .limit(1);
-  return caller.length > 0 && caller[0].role === "admin";
+  return rows[0] ?? null;
 }
 
-// PATCH /api/templates/[id] — update template name, area, data source, etc.
+// PATCH /api/templates/[id] — update template name, area, data source, assignees
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await requireAdmin(session.user.email))) {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -32,6 +36,9 @@ export async function PATCH(
   const templateId = parseInt(id, 10);
   if (isNaN(templateId)) {
     return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
+  }
+  if (!(await ownedTemplate(me, templateId))) {
+    return NextResponse.json({ error: "Template not found" }, { status: 404 });
   }
 
   const body = await req.json();
@@ -42,19 +49,27 @@ export async function PATCH(
   if (body.cadence !== undefined) updates.cadence = body.cadence;
   if (body.dataSourceUrl !== undefined) updates.dataSourceUrl = body.dataSourceUrl?.trim() || null;
 
-  // Handle assignees update
+  // Handle assignees update — only users from the caller's own org.
   if (body.assigneeIds !== undefined) {
-    // Remove existing assignees
+    const ids: number[] = Array.isArray(body.assigneeIds)
+      ? body.assigneeIds.filter((n: unknown) => Number.isInteger(n))
+      : [];
+    const valid = ids.length
+      ? await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(inArray(users.id, ids), eq(users.orgId, me.orgId)))
+      : [];
+
     await db
       .delete(reportAssignees)
       .where(eq(reportAssignees.templateId, templateId));
 
-    // Add new ones
-    if (Array.isArray(body.assigneeIds) && body.assigneeIds.length > 0) {
+    if (valid.length > 0) {
       await db.insert(reportAssignees).values(
-        body.assigneeIds.map((userId: number) => ({
+        valid.map((u) => ({
           templateId,
-          userId,
+          userId: u.id,
         }))
       );
     }
@@ -64,7 +79,12 @@ export async function PATCH(
     const updated = await db
       .update(reportTemplates)
       .set(updates)
-      .where(eq(reportTemplates.id, templateId))
+      .where(
+        and(
+          eq(reportTemplates.id, templateId),
+          eq(reportTemplates.orgId, me.orgId),
+        ),
+      )
       .returning();
 
     if (!updated.length) {
@@ -81,11 +101,11 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await requireAdmin(session.user.email))) {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -98,7 +118,12 @@ export async function DELETE(
   const updated = await db
     .update(reportTemplates)
     .set({ archivedAt: new Date() })
-    .where(eq(reportTemplates.id, templateId))
+    .where(
+      and(
+        eq(reportTemplates.id, templateId),
+        eq(reportTemplates.orgId, me.orgId),
+      ),
+    )
     .returning();
 
   if (!updated.length) {

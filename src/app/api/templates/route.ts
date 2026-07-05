@@ -1,45 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { reportTemplates, reportAssignees, questions, users } from "@/db/schema";
-import { eq, isNull, sql, asc } from "drizzle-orm";
+import { and, eq, isNull, sql, asc, inArray } from "drizzle-orm";
+import { getSessionUser } from "@/lib/session";
 
-// GET /api/templates — list all report templates with question counts and assignees
+// GET /api/templates — the caller's org's templates with question counts + assignees
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const templates = await db
     .select()
     .from(reportTemplates)
-    .where(isNull(reportTemplates.archivedAt))
+    .where(
+      and(
+        eq(reportTemplates.orgId, me.orgId),
+        isNull(reportTemplates.archivedAt),
+      ),
+    )
     .orderBy(asc(reportTemplates.name));
+  const templateIds = templates.map((t) => t.id);
 
-  // Get question counts per template (non-archived)
-  const qCounts = await db
-    .select({
-      templateId: questions.templateId,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(questions)
-    .where(isNull(questions.archivedAt))
-    .groupBy(questions.templateId);
+  // Question counts per template (non-archived).
+  const qCounts = templateIds.length
+    ? await db
+        .select({
+          templateId: questions.templateId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(questions)
+        .where(
+          and(
+            isNull(questions.archivedAt),
+            inArray(questions.templateId, templateIds),
+          ),
+        )
+        .groupBy(questions.templateId)
+    : [];
 
   const countMap = new Map(qCounts.map((q) => [q.templateId, q.count]));
 
-  // Get assignees per template
-  const assignees = await db
-    .select({
-      templateId: reportAssignees.templateId,
-      userId: reportAssignees.userId,
-      userName: users.name,
-      userEmail: users.email,
-    })
-    .from(reportAssignees)
-    .innerJoin(users, eq(reportAssignees.userId, users.id));
+  // Assignees per template.
+  const assignees = templateIds.length
+    ? await db
+        .select({
+          templateId: reportAssignees.templateId,
+          userId: reportAssignees.userId,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(reportAssignees)
+        .innerJoin(users, eq(reportAssignees.userId, users.id))
+        .where(inArray(reportAssignees.templateId, templateIds))
+    : [];
 
   const assigneeMap = new Map<number, { id: number; name: string | null; email: string }[]>();
   for (const a of assignees) {
@@ -57,21 +72,13 @@ export async function GET() {
   return NextResponse.json({ templates: result });
 }
 
-// POST /api/templates — create a new report template
+// POST /api/templates — create a new report template in the caller's org
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Check admin
-  const caller = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.email, session.user.email.toLowerCase()))
-    .limit(1);
-
-  if (!caller.length || caller[0].role !== "admin") {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -85,6 +92,7 @@ export async function POST(req: NextRequest) {
   const inserted = await db
     .insert(reportTemplates)
     .values({
+      orgId: me.orgId,
       name: name.trim(),
       area: area?.trim() || null,
       cadence: cadence || "weekly",

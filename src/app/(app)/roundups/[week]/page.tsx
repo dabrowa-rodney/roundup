@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { ArrowLeft, FileText } from "lucide-react";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { roundups, users } from "@/db/schema";
+import { roundups } from "@/db/schema";
+import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { RoundupViewer } from "@/components/roundup-viewer";
 import { GenerateRoundupButton } from "@/components/roundup-generate";
@@ -23,26 +22,16 @@ export default async function RoundupViewerPage({
     ? mondayISO(new Date())
     : mondayISO(parsed);
 
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.toLowerCase();
-  const me = email
-    ? (
-        await db
-          .select({ role: users.role })
-          .from(users)
-          .where(eq(users.email, email))
-          .limit(1)
-      )[0]
-    : undefined;
+  const me = await getSessionUser();
   const isAdmin = me?.role === "admin";
   // Roundups are a leadership view — not for contributors.
-  if (!isAdmin) redirect("/my-reports");
+  if (!me || !isAdmin) redirect("/my-reports");
 
   const roundup = (
     await db
       .select()
       .from(roundups)
-      .where(eq(roundups.weekStart, weekIso))
+      .where(and(eq(roundups.orgId, me.orgId), eq(roundups.weekStart, weekIso)))
       .limit(1)
   )[0];
 

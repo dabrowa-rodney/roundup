@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   answers,
   emailLog,
+  organisations,
   questions,
   reportAssignees,
   reportInstances,
@@ -14,6 +13,8 @@ import {
   settings,
   users,
 } from "@/db/schema";
+import { decryptSecret } from "@/lib/crypto";
+import { getSessionUser } from "@/lib/session";
 import { emailConfigured, roundupEmail, sendEmail } from "@/lib/email";
 import {
   type AnswerInput,
@@ -45,18 +46,11 @@ function generatedLabel(d: Date): string {
 // POST /api/roundups/generate  { week?: "YYYY-MM-DD" }
 // Admin-only. Compiles the week's submitted reports into a draft Roundup.
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const caller = (
-    await db
-      .select({ role: users.role })
-      .from(users)
-      .where(eq(users.email, session.user.email.toLowerCase()))
-      .limit(1)
-  )[0];
-  if (!caller || caller.role !== "admin") {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -84,6 +78,7 @@ export async function POST(req: NextRequest) {
     )
     .where(
       and(
+        eq(reportInstances.orgId, me.orgId),
         eq(reportInstances.weekStart, weekStart),
         inArray(reportInstances.status, ["submitted", "locked"]),
       ),
@@ -136,14 +131,24 @@ export async function POST(req: NextRequest) {
           reportTemplates,
           eq(reportAssignees.templateId, reportTemplates.id),
         )
-        .where(isNull(reportTemplates.archivedAt))
+        .where(
+          and(
+            eq(reportTemplates.orgId, me.orgId),
+            isNull(reportTemplates.archivedAt),
+          ),
+        )
     )[0]?.count ?? 0;
 
   // Pull metrics from every active template's connected Google Sheet.
   const srcRows = await db
     .select({ url: reportTemplates.dataSourceUrl })
     .from(reportTemplates)
-    .where(isNull(reportTemplates.archivedAt));
+    .where(
+      and(
+        eq(reportTemplates.orgId, me.orgId),
+        isNull(reportTemplates.archivedAt),
+      ),
+    );
   const sheetUrls = [
     ...new Set(
       srcRows
@@ -163,7 +168,7 @@ export async function POST(req: NextRequest) {
   const priorRows = await db
     .select({ weekStart: roundups.weekStart, skimJson: roundups.skimJson })
     .from(roundups)
-    .where(lt(roundups.weekStart, weekStart))
+    .where(and(eq(roundups.orgId, me.orgId), lt(roundups.weekStart, weekStart)))
     .orderBy(desc(roundups.weekStart))
     .limit(2);
   const priorWeeks: PriorWeek[] = priorRows.map((r) => {
@@ -174,6 +179,16 @@ export async function POST(req: NextRequest) {
       metrics: skim.metrics ?? [],
     };
   });
+
+  // The org's own Anthropic key (BYO): no key → deterministic compile.
+  const org = (
+    await db
+      .select({ keyEnc: organisations.anthropicKeyEnc })
+      .from(organisations)
+      .where(eq(organisations.id, me.orgId))
+      .limit(1)
+  )[0];
+  const aiKey = decryptSecret(org?.keyEnc);
 
   const now = new Date();
   const content = await generateRoundupAI(
@@ -188,11 +203,13 @@ export async function POST(req: NextRequest) {
       sheetSeries,
     },
     priorWeeks,
+    aiKey,
   );
 
   await db
     .insert(roundups)
     .values({
+      orgId: me.orgId,
       weekStart,
       status: "draft",
       skimJson: content.skim,
@@ -200,7 +217,7 @@ export async function POST(req: NextRequest) {
       generatedAt: now,
     })
     .onConflictDoUpdate({
-      target: roundups.weekStart,
+      target: [roundups.orgId, roundups.weekStart],
       set: {
         status: "draft",
         skimJson: content.skim,
@@ -216,12 +233,13 @@ export async function POST(req: NextRequest) {
       await db
         .select({ roundupReady: settings.reminderRoundupReady })
         .from(settings)
+        .where(eq(settings.orgId, me.orgId))
         .limit(1)
     )[0];
     if (settingsRow?.roundupReady) {
       const claimed = await db
         .insert(emailLog)
-        .values({ kind: "roundup_ready", weekStart })
+        .values({ orgId: me.orgId, kind: "roundup_ready", weekStart })
         .onConflictDoNothing()
         .returning({ id: emailLog.id });
       if (claimed.length > 0) {
@@ -229,7 +247,12 @@ export async function POST(req: NextRequest) {
         const recipients = await db
           .select({ email: users.email })
           .from(users)
-          .where(inArray(users.role, ["recipient", "admin"]));
+          .where(
+            and(
+              eq(users.orgId, me.orgId),
+              inArray(users.role, ["recipient", "admin"]),
+            ),
+          );
         const msg = roundupEmail({
           weekLabel: `${weekNumberLabel(parseISODate(weekStart))} · ${weekRange(parseISODate(weekStart))}`,
           headline: content.skim.headline || "This week's Roundup is ready.",

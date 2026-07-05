@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { users, reportAssignees, reportTemplates } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getSessionUser } from "@/lib/session";
 
-// GET /api/users — list all users with their assigned report areas
+// GET /api/users — the caller's org's members with their assigned report areas
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -23,16 +22,18 @@ export async function GET() {
       createdAt: users.createdAt,
     })
     .from(users)
+    .where(eq(users.orgId, me.orgId))
     .orderBy(users.name);
 
-  // Get assigned report template names for each user
+  // Assigned report template names per user (templates carry the org scope).
   const assignments = await db
     .select({
       userId: reportAssignees.userId,
       templateName: reportTemplates.name,
     })
     .from(reportAssignees)
-    .innerJoin(reportTemplates, eq(reportAssignees.templateId, reportTemplates.id));
+    .innerJoin(reportTemplates, eq(reportAssignees.templateId, reportTemplates.id))
+    .where(eq(reportTemplates.orgId, me.orgId));
 
   const assignmentMap = new Map<number, string[]>();
   for (const a of assignments) {

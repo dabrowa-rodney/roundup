@@ -1,26 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
+import { getSessionUser } from "@/lib/session";
 
-// POST /api/users/invite — invite a new user (pre-create them)
+// POST /api/users/invite — pre-create a member of the caller's org; when that
+// email signs in with Google it lands in this organisation.
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Check caller is admin
-  const caller = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.email, session.user.email.toLowerCase()))
-    .limit(1);
-
-  if (!caller.length || caller[0].role !== "admin") {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -35,15 +27,23 @@ export async function POST(req: NextRequest) {
   const validRoles = ["admin", "contributor", "recipient"];
   const userRole = validRoles.includes(role) ? role : "contributor";
 
-  // Check if user already exists
+  // Emails are globally unique — one organisation per email address (v1).
   const existing = await db
-    .select({ id: users.id })
+    .select({ id: users.id, orgId: users.orgId })
     .from(users)
     .where(eq(users.email, normalizedEmail))
     .limit(1);
 
   if (existing.length > 0) {
-    return NextResponse.json({ error: "User already exists" }, { status: 409 });
+    return NextResponse.json(
+      {
+        error:
+          existing[0].orgId === me.orgId
+            ? "User already exists"
+            : "That email is already registered to another Roundup organisation",
+      },
+      { status: 409 },
+    );
   }
 
   const displayName = name?.trim() || normalizedEmail.split("@")[0];
@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
   const inserted = await db
     .insert(users)
     .values({
+      orgId: me.orgId,
       email: normalizedEmail,
       name: displayName,
       role: userRole,

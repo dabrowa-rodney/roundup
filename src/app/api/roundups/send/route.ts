@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { eq, inArray } from "drizzle-orm";
-import { authOptions } from "@/lib/auth";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { emailLog, roundupRecipients, roundups, users } from "@/db/schema";
+import { getSessionUser } from "@/lib/session";
 import type { SkimJson } from "@/lib/roundup";
 import { emailConfigured, roundupEmail, sendEmail } from "@/lib/email";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
@@ -14,18 +13,11 @@ export const maxDuration = 60;
 // Admin-only. Publishes a draft Roundup: records the recipient list, emails
 // everyone with the "recipient" role, and marks the roundup as sent.
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const caller = (
-    await db
-      .select({ role: users.role })
-      .from(users)
-      .where(eq(users.email, session.user.email.toLowerCase()))
-      .limit(1)
-  )[0];
-  if (caller?.role !== "admin") {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -37,7 +29,11 @@ export async function POST(req: NextRequest) {
   const weekStart = mondayISO(parsed);
 
   const roundup = (
-    await db.select().from(roundups).where(eq(roundups.weekStart, weekStart)).limit(1)
+    await db
+      .select()
+      .from(roundups)
+      .where(and(eq(roundups.orgId, me.orgId), eq(roundups.weekStart, weekStart)))
+      .limit(1)
   )[0];
   if (!roundup?.skimJson) {
     return NextResponse.json(
@@ -57,7 +53,9 @@ export async function POST(req: NextRequest) {
   const recipients = await db
     .select({ id: users.id, email: users.email })
     .from(users)
-    .where(inArray(users.role, ["recipient", "admin"]));
+    .where(
+      and(eq(users.orgId, me.orgId), inArray(users.role, ["recipient", "admin"])),
+    );
 
   const now = new Date();
 
@@ -91,7 +89,7 @@ export async function POST(req: NextRequest) {
 
   await db
     .insert(emailLog)
-    .values({ kind: "roundup_sent", weekStart, recipientCount: emailed })
+    .values({ orgId: me.orgId, kind: "roundup_sent", weekStart, recipientCount: emailed })
     .onConflictDoNothing();
 
   return NextResponse.json({

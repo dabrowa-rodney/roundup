@@ -2,6 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import { Avatar } from "./ui";
+import { OrgSettingsCards } from "./org-settings-cards";
 import {
   useSettings,
   type ReminderSlot,
@@ -184,6 +185,9 @@ export function SettingsScreen() {
           )}
         </div>
       </Card>
+
+      {/* Organisation + AI generation */}
+      <OrgSettingsCards />
 
       {/* Weekly schedule */}
       <Card>

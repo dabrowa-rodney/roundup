@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { answers, reportInstances, settings, users } from "@/db/schema";
+import { answers, reportInstances, settings } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { isWeekClosed, type ScheduleSettings } from "@/lib/lifecycle";
+import { getSessionUser } from "@/lib/session";
 
 // PATCH /api/instances/[id] — save answers (autosave / draft) or submit.
 // Owner-only. Rejected once the instance is locked.
@@ -12,8 +11,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -21,17 +20,6 @@ export async function PATCH(
   const instanceId = parseInt(id, 10);
   if (isNaN(instanceId)) {
     return NextResponse.json({ error: "Invalid instance ID" }, { status: 400 });
-  }
-
-  const me = (
-    await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, session.user.email.toLowerCase()))
-      .limit(1)
-  )[0];
-  if (!me) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const instance = (
@@ -44,10 +32,16 @@ export async function PATCH(
   if (!instance) {
     return NextResponse.json({ error: "Report not found" }, { status: 404 });
   }
-  if (instance.userId !== me.id) {
+  if (instance.userId !== me.id || instance.orgId !== me.orgId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const settingsRow = (await db.select().from(settings).limit(1))[0];
+  const settingsRow = (
+    await db
+      .select()
+      .from(settings)
+      .where(eq(settings.orgId, me.orgId))
+      .limit(1)
+  )[0];
   const sched: ScheduleSettings = {
     closeDay: settingsRow?.closeDay ?? "Sunday",
     closeTime: settingsRow?.closeTime ?? "20:00",

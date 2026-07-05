@@ -14,12 +14,33 @@ import {
   Roundup data model (see the design handoff). Historical responses are never
   hard-deleted — `archivedAt` columns implement soft deletes so past answers
   remain available as context for future Roundups.
+
+  MULTI-TENANCY: every tenant-owned table carries `org_id`. Rows are always
+  read/written through the session user's organisation — never trust an org id
+  from the client. Tables reachable only via an org-scoped parent (questions,
+  answers, roundup_recipients) rely on the parent's org_id.
 */
+
+// ── Organisations (tenants) ────────────────────────────
+export const organisations = pgTable("organisations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  // Subdomain-safe identifier ("acme" → acme.roundup.work). Lowercase a-z0-9-.
+  slug: text("slug").notNull().unique(),
+  // Org's own Anthropic API key, AES-256-GCM encrypted (see lib/crypto.ts).
+  // Null = no AI generation; the deterministic compiler is used instead.
+  anthropicKeyEnc: text("anthropic_key_enc"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 // ── Users ──────────────────────────────────────────────
 // role: 'admin' | 'contributor' | 'recipient'
+// One organisation per email address (v1) — email stays globally unique.
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id")
+    .notNull()
+    .references(() => organisations.id),
   email: text("email").notNull().unique(),
   name: text("name"),
   image: text("image"),
@@ -33,6 +54,9 @@ export const users = pgTable("users", {
 // ── Report templates ───────────────────────────────────
 export const reportTemplates = pgTable("report_templates", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id")
+    .notNull()
+    .references(() => organisations.id),
   name: text("name").notNull(),
   area: text("area"),
   cadence: text("cadence").notNull().default("weekly"),
@@ -79,6 +103,9 @@ export const reportInstances = pgTable(
   "report_instances",
   {
     id: serial("id").primaryKey(),
+    orgId: integer("org_id")
+      .notNull()
+      .references(() => organisations.id),
     templateId: integer("template_id")
       .notNull()
       .references(() => reportTemplates.id),
@@ -115,16 +142,23 @@ export const answers = pgTable(
 
 // ── Roundups (the generated weekly summary) ────────────
 // status: 'pending' | 'draft' | 'sent'
-export const roundups = pgTable("roundups", {
-  id: serial("id").primaryKey(),
-  weekStart: date("week_start", { mode: "string" }).notNull().unique(),
-  status: text("status").notNull().default("pending"),
-  skimJson: jsonb("skim_json"),
-  fullJson: jsonb("full_json"),
-  generatedAt: timestamp("generated_at"),
-  sentAt: timestamp("sent_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const roundups = pgTable(
+  "roundups",
+  {
+    id: serial("id").primaryKey(),
+    orgId: integer("org_id")
+      .notNull()
+      .references(() => organisations.id),
+    weekStart: date("week_start", { mode: "string" }).notNull(),
+    status: text("status").notNull().default("pending"),
+    skimJson: jsonb("skim_json"),
+    fullJson: jsonb("full_json"),
+    generatedAt: timestamp("generated_at"),
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.orgId, t.weekStart)],
+);
 
 // ── Roundup ↔ recipient ────────────────────────────────
 export const roundupRecipients = pgTable(
@@ -149,17 +183,24 @@ export const emailLog = pgTable(
   "email_log",
   {
     id: serial("id").primaryKey(),
+    orgId: integer("org_id")
+      .notNull()
+      .references(() => organisations.id),
     kind: text("kind").notNull(),
     weekStart: date("week_start", { mode: "string" }).notNull(),
     recipientCount: integer("recipient_count").notNull().default(0),
     sentAt: timestamp("sent_at").notNull().defaultNow(),
   },
-  (t) => [unique().on(t.kind, t.weekStart)],
+  (t) => [unique().on(t.orgId, t.kind, t.weekStart)],
 );
 
-// ── Platform settings (single row) ─────────────────────
+// ── Org settings (one row per organisation) ────────────
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id")
+    .notNull()
+    .unique()
+    .references(() => organisations.id),
   closeDay: text("close_day").notNull().default("Sunday"),
   closeTime: text("close_time").notNull().default("20:00"),
   openDay: text("open_day").notNull().default("Monday"),

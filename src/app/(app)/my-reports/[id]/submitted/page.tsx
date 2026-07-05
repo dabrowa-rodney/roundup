@@ -1,17 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { Check } from "lucide-react";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   answers,
   questions,
   reportInstances,
   reportTemplates,
-  users,
 } from "@/db/schema";
+import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { SectionLabel } from "@/components/ui";
 import { formatAnswer, parseConfig } from "@/lib/questions";
@@ -26,25 +24,20 @@ export default async function SubmittedPage({
   const templateId = parseInt(id, 10);
   if (isNaN(templateId)) notFound();
 
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) redirect("/login");
-  const firstName = (session?.user?.name ?? "there").split(" ")[0];
-
-  const me = (
-    await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1)
-  )[0];
+  const me = await getSessionUser();
   if (!me) redirect("/login");
+  const firstName = (me.name ?? "there").split(" ")[0];
 
   const template = (
     await db
       .select()
       .from(reportTemplates)
-      .where(eq(reportTemplates.id, templateId))
+      .where(
+        and(
+          eq(reportTemplates.id, templateId),
+          eq(reportTemplates.orgId, me.orgId),
+        ),
+      )
       .limit(1)
   )[0];
   if (!template) notFound();

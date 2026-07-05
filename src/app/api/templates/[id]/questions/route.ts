@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { questions, users } from "@/db/schema";
+import { questions, reportTemplates } from "@/db/schema";
 import { eq, and, isNull, asc } from "drizzle-orm";
+import { getSessionUser, type SessionUser } from "@/lib/session";
 
-async function requireAdmin(email: string) {
-  const caller = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.email, email.toLowerCase()))
+/** True if the template belongs to the caller's org. */
+async function ownedTemplate(me: SessionUser, templateId: number) {
+  const rows = await db
+    .select({ id: reportTemplates.id })
+    .from(reportTemplates)
+    .where(
+      and(
+        eq(reportTemplates.id, templateId),
+        eq(reportTemplates.orgId, me.orgId),
+      ),
+    )
     .limit(1);
-  return caller.length > 0 && caller[0].role === "admin";
+  return rows.length > 0;
 }
 
 // GET /api/templates/[id]/questions — list questions for a template
@@ -19,8 +24,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -28,6 +33,9 @@ export async function GET(
   const templateId = parseInt(id, 10);
   if (isNaN(templateId)) {
     return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
+  }
+  if (!(await ownedTemplate(me, templateId))) {
+    return NextResponse.json({ error: "Template not found" }, { status: 404 });
   }
 
   const qs = await db
@@ -39,16 +47,26 @@ export async function GET(
   return NextResponse.json({ questions: qs });
 }
 
+const VALID_TYPES = [
+  "rag",
+  "long_text",
+  "short_text",
+  "single_choice",
+  "multi_choice",
+  "number",
+  "file_link",
+];
+
 // POST /api/templates/[id]/questions — add a question to a template
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await requireAdmin(session.user.email))) {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -56,6 +74,9 @@ export async function POST(
   const templateId = parseInt(id, 10);
   if (isNaN(templateId)) {
     return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
+  }
+  if (!(await ownedTemplate(me, templateId))) {
+    return NextResponse.json({ error: "Template not found" }, { status: 404 });
   }
 
   const body = await req.json();
@@ -65,9 +86,8 @@ export async function POST(
     return NextResponse.json({ error: "Text and type are required" }, { status: 400 });
   }
 
-  const validTypes = ["rag", "long_text", "short_text", "single_choice", "multi_choice", "number", "file_link"];
-  if (!validTypes.includes(type)) {
-    return NextResponse.json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` }, { status: 400 });
+  if (!VALID_TYPES.includes(type)) {
+    return NextResponse.json({ error: `Invalid type. Must be one of: ${VALID_TYPES.join(", ")}` }, { status: 400 });
   }
 
   // Auto-assign order if not provided
@@ -95,27 +115,17 @@ export async function POST(
   return NextResponse.json({ question: inserted[0] }, { status: 201 });
 }
 
-const VALID_TYPES = [
-  "rag",
-  "long_text",
-  "short_text",
-  "single_choice",
-  "multi_choice",
-  "number",
-  "file_link",
-];
-
 // PATCH /api/templates/[id]/questions — update or archive a question (scoped to
 // this template so an admin can't mutate another template's questions by id).
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await requireAdmin(session.user.email))) {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -123,6 +133,9 @@ export async function PATCH(
   const templateId = parseInt(id, 10);
   if (isNaN(templateId)) {
     return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
+  }
+  if (!(await ownedTemplate(me, templateId))) {
+    return NextResponse.json({ error: "Template not found" }, { status: 404 });
   }
 
   const body = await req.json();

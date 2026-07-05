@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { eq, isNull, sql } from "drizzle-orm";
-import { authOptions } from "@/lib/auth";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { db } from "@/db";
 import {
@@ -11,7 +10,6 @@ import {
   reportTemplates,
   roundups,
   settings,
-  users,
 } from "@/db/schema";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
@@ -42,23 +40,19 @@ function StatusPill({ status }: { status: Status }) {
 
 export default async function RoundupsPage() {
   // Roundups are a leadership view — not for contributors.
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.toLowerCase();
-  const me = email
-    ? (
-        await db
-          .select({ role: users.role })
-          .from(users)
-          .where(eq(users.email, email))
-          .limit(1)
-      )[0]
-    : undefined;
+  const me = await getSessionUser();
   if (me?.role !== "admin") redirect("/my-reports");
 
   const weekIso = mondayISO(new Date());
 
   // Close schedule (for the banner), with defaults if unset.
-  const settingsRow = (await db.select().from(settings).limit(1))[0];
+  const settingsRow = (
+    await db
+      .select()
+      .from(settings)
+      .where(eq(settings.orgId, me.orgId))
+      .limit(1)
+  )[0];
   const closeDay = settingsRow?.closeDay ?? "Sunday";
   const closeTime = settingsRow?.closeTime ?? "20:00";
 
@@ -72,7 +66,12 @@ export default async function RoundupsPage() {
           reportTemplates,
           eq(reportAssignees.templateId, reportTemplates.id),
         )
-        .where(isNull(reportTemplates.archivedAt))
+        .where(
+          and(
+            eq(reportTemplates.orgId, me.orgId),
+            isNull(reportTemplates.archivedAt),
+          ),
+        )
     )[0]?.count ?? 0;
 
   // Submitted counts per week (weekStart is a plain date string).
@@ -82,11 +81,13 @@ export default async function RoundupsPage() {
       submitted: sql<number>`count(*) filter (where status in ('submitted','locked'))::int`,
     })
     .from(reportInstances)
+    .where(eq(reportInstances.orgId, me.orgId))
     .groupBy(reportInstances.weekStart);
 
   const roundupRows = await db
     .select({ weekStart: roundups.weekStart, status: roundups.status })
-    .from(roundups);
+    .from(roundups)
+    .where(eq(roundups.orgId, me.orgId));
 
   const byWeek = new Map<
     string,

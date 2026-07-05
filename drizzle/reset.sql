@@ -28,8 +28,18 @@ DROP TABLE IF EXISTS "email_log" CASCADE;
 DROP TABLE IF EXISTS "roundups" CASCADE;
 DROP TABLE IF EXISTS "settings" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
+DROP TABLE IF EXISTS "organisations" CASCADE;
 
 -- ── Recreate the Roundup schema ──
+CREATE TABLE "organisations" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"slug" text NOT NULL,
+	"anthropic_key_enc" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "organisations_slug_unique" UNIQUE("slug")
+);
+
 CREATE TABLE "answers" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"instance_id" integer NOT NULL,
@@ -61,6 +71,7 @@ CREATE TABLE "report_assignees" (
 
 CREATE TABLE "report_instances" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
 	"template_id" integer NOT NULL,
 	"user_id" integer NOT NULL,
 	"week_start" date NOT NULL,
@@ -74,6 +85,7 @@ CREATE TABLE "report_instances" (
 
 CREATE TABLE "report_templates" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
 	"name" text NOT NULL,
 	"area" text,
 	"cadence" text DEFAULT 'weekly' NOT NULL,
@@ -91,6 +103,7 @@ CREATE TABLE "roundup_recipients" (
 
 CREATE TABLE "roundups" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
 	"week_start" date NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"skim_json" jsonb,
@@ -98,20 +111,22 @@ CREATE TABLE "roundups" (
 	"generated_at" timestamp,
 	"sent_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "roundups_week_start_unique" UNIQUE("week_start")
+	CONSTRAINT "roundups_org_id_week_start_unique" UNIQUE("org_id","week_start")
 );
 
 CREATE TABLE "email_log" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
 	"kind" text NOT NULL,
 	"week_start" date NOT NULL,
 	"recipient_count" integer DEFAULT 0 NOT NULL,
 	"sent_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "email_log_kind_week_start_unique" UNIQUE("kind","week_start")
+	CONSTRAINT "email_log_org_id_kind_week_start_unique" UNIQUE("org_id","kind","week_start")
 );
 
 CREATE TABLE "settings" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
 	"close_day" text DEFAULT 'Sunday' NOT NULL,
 	"close_time" text DEFAULT '20:00' NOT NULL,
 	"open_day" text DEFAULT 'Monday' NOT NULL,
@@ -124,11 +139,13 @@ CREATE TABLE "settings" (
 	"reminder2_day" text DEFAULT 'Friday' NOT NULL,
 	"reminder2_time" text DEFAULT '09:00' NOT NULL,
 	"reminder_roundup_ready" boolean DEFAULT false NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "settings_org_id_unique" UNIQUE("org_id")
 );
 
 CREATE TABLE "users" (
 	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
 	"email" text NOT NULL,
 	"name" text,
 	"image" text,
@@ -149,3 +166,10 @@ ALTER TABLE "report_instances" ADD CONSTRAINT "report_instances_template_id_repo
 ALTER TABLE "report_instances" ADD CONSTRAINT "report_instances_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "roundup_recipients" ADD CONSTRAINT "roundup_recipients_roundup_id_roundups_id_fk" FOREIGN KEY ("roundup_id") REFERENCES "public"."roundups"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "roundup_recipients" ADD CONSTRAINT "roundup_recipients_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+
+ALTER TABLE "users" ADD CONSTRAINT "users_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "report_templates" ADD CONSTRAINT "report_templates_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "report_instances" ADD CONSTRAINT "report_instances_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "roundups" ADD CONSTRAINT "roundups_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "email_log" ADD CONSTRAINT "email_log_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "settings" ADD CONSTRAINT "settings_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;

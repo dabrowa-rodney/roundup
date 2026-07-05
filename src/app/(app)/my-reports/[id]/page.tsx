@@ -1,7 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   answers,
@@ -10,8 +8,8 @@ import {
   reportInstances,
   reportTemplates,
   settings,
-  users,
 } from "@/db/schema";
+import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { ReportForm } from "@/components/report-form";
 import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
@@ -26,17 +24,7 @@ export default async function ReportPage({
   const templateId = parseInt(id, 10);
   if (isNaN(templateId)) notFound();
 
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.toLowerCase();
-  if (!email) redirect("/login");
-
-  const me = (
-    await db
-      .select({ id: users.id, role: users.role })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1)
-  )[0];
+  const me = await getSessionUser();
   if (!me) redirect("/login");
 
   const template = (
@@ -46,6 +34,7 @@ export default async function ReportPage({
       .where(
         and(
           eq(reportTemplates.id, templateId),
+          eq(reportTemplates.orgId, me.orgId),
           isNull(reportTemplates.archivedAt),
         ),
       )
@@ -74,6 +63,7 @@ export default async function ReportPage({
   await db
     .insert(reportInstances)
     .values({
+      orgId: me.orgId,
       templateId,
       userId: me.id,
       weekStart: weekIso,
@@ -113,7 +103,13 @@ export default async function ReportPage({
   for (const a of existing) initialValues[a.questionId] = a.value;
 
   // Editing is blocked once the week's close time has passed (or it's locked).
-  const s = (await db.select().from(settings).limit(1))[0];
+  const s = (
+    await db
+      .select()
+      .from(settings)
+      .where(eq(settings.orgId, me.orgId))
+      .limit(1)
+  )[0];
   const sched: ScheduleSettings = {
     closeDay: s?.closeDay ?? "Sunday",
     closeTime: s?.closeTime ?? "20:00",

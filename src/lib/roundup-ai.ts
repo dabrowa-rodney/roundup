@@ -258,18 +258,24 @@ function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
 }
 
 /**
- * Generate the Roundup with Claude, falling back to the deterministic compiler
- * on missing key / error / timeout / refusal. Never throws.
+ * Generate the Roundup with Claude using the ORGANISATION'S OWN API key,
+ * falling back to the deterministic compiler on missing key / error /
+ * timeout / refusal. Never throws.
+ *
+ * apiKey comes from the org's encrypted settings — there is deliberately no
+ * platform-level env fallback: each organisation brings its own key, and
+ * without one they get the (perfectly serviceable) deterministic Roundup.
  */
 export async function generateRoundupAI(
   input: CompileInput,
   priorWeeks: PriorWeek[] = [],
+  apiKey?: string | null,
 ): Promise<RoundupContent> {
   const deterministic = compileRoundup(input);
-  if (!process.env.ANTHROPIC_API_KEY) return deterministic;
+  if (!apiKey) return deterministic;
 
   try {
-    const client = new Anthropic();
+    const client = new Anthropic({ apiKey });
     const response = await client.messages.create(
       {
         model: "claude-opus-4-8",

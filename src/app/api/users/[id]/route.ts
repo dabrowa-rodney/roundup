@@ -1,37 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
+import { getSessionUser } from "@/lib/session";
 
-async function adminCount(): Promise<number> {
+async function adminCount(orgId: number): Promise<number> {
   const rows = await db
     .select({ id: users.id })
     .from(users)
-    .where(eq(users.role, "admin"));
+    .where(and(eq(users.orgId, orgId), eq(users.role, "admin")));
   return rows.length;
 }
 
-// PATCH /api/users/[id] — update user role, name, etc.
+// PATCH /api/users/[id] — update a member of the caller's org (role, name)
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Check caller is admin
-  const caller = await db
-    .select({ role: users.role })
-    .from(users)
-    .where(eq(users.email, session.user.email.toLowerCase()))
-    .limit(1);
-
-  if (!caller.length || caller[0].role !== "admin") {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -41,25 +32,32 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
   }
 
+  // Target must be in the caller's org.
+  const target = (
+    await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(and(eq(users.id, userId), eq(users.orgId, me.orgId)))
+      .limit(1)
+  )[0];
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
   if (body.role && ["admin", "contributor", "recipient"].includes(body.role)) {
-    // Don't allow demoting the last remaining administrator.
-    if (body.role !== "admin") {
-      const target = (
-        await db
-          .select({ role: users.role })
-          .from(users)
-          .where(eq(users.id, userId))
-          .limit(1)
-      )[0];
-      if (target?.role === "admin" && (await adminCount()) <= 1) {
-        return NextResponse.json(
-          { error: "There must be at least one administrator." },
-          { status: 400 },
-        );
-      }
+    // Don't allow demoting the org's last remaining administrator.
+    if (
+      body.role !== "admin" &&
+      target.role === "admin" &&
+      (await adminCount(me.orgId)) <= 1
+    ) {
+      return NextResponse.json(
+        { error: "There must be at least one administrator." },
+        { status: 400 },
+      );
     }
     updates.role = body.role;
   }
@@ -71,7 +69,7 @@ export async function PATCH(
   const updated = await db
     .update(users)
     .set(updates)
-    .where(eq(users.id, userId))
+    .where(and(eq(users.id, userId), eq(users.orgId, me.orgId)))
     .returning();
 
   if (!updated.length) {
@@ -81,24 +79,16 @@ export async function PATCH(
   return NextResponse.json({ user: updated[0] });
 }
 
-// DELETE /api/users/[id] — remove a user
+// DELETE /api/users/[id] — remove a member of the caller's org
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
+  const me = await getSessionUser();
+  if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Check caller is admin
-  const caller = await db
-    .select({ id: users.id, role: users.role })
-    .from(users)
-    .where(eq(users.email, session.user.email.toLowerCase()))
-    .limit(1);
-
-  if (!caller.length || caller[0].role !== "admin") {
+  if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -109,7 +99,7 @@ export async function DELETE(
   }
 
   // Prevent self-deletion
-  if (caller[0].id === userId) {
+  if (me.id === userId) {
     return NextResponse.json({ error: "Cannot delete yourself" }, { status: 400 });
   }
 
@@ -117,14 +107,14 @@ export async function DELETE(
     await db
       .select({ role: users.role })
       .from(users)
-      .where(eq(users.id, userId))
+      .where(and(eq(users.id, userId), eq(users.orgId, me.orgId)))
       .limit(1)
   )[0];
   if (!target) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
-  // Don't allow removing the last remaining administrator.
-  if (target.role === "admin" && (await adminCount()) <= 1) {
+  // Don't allow removing the org's last remaining administrator.
+  if (target.role === "admin" && (await adminCount(me.orgId)) <= 1) {
     return NextResponse.json(
       { error: "There must be at least one administrator." },
       { status: 400 },
@@ -132,7 +122,9 @@ export async function DELETE(
   }
 
   try {
-    await db.delete(users).where(eq(users.id, userId));
+    await db
+      .delete(users)
+      .where(and(eq(users.id, userId), eq(users.orgId, me.orgId)));
   } catch {
     // Users with report history are referenced by report_instances (no cascade).
     return NextResponse.json(

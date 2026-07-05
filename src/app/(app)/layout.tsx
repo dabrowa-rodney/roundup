@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getSessionUser } from "@/lib/session";
 import { Sidebar } from "@/components/sidebar";
 import { SettingsProvider } from "@/components/settings-provider";
 
@@ -9,9 +10,13 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Gate the whole app shell behind authentication.
+  // Gate the whole app shell behind authentication…
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
+  // …and behind membership: a signed-in identity without a user row hasn't
+  // created/joined an organisation yet.
+  const me = await getSessionUser();
+  if (!me) redirect("/onboarding");
 
   return (
     <SettingsProvider>
