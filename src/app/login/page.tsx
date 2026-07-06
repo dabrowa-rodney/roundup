@@ -6,15 +6,14 @@ export default function LoginPage() {
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[1.05fr_0.95fr]">
       {/* Left panel — brand */}
       <div className="relative hidden flex-col justify-between overflow-hidden bg-accent px-[60px] py-14 text-accent-ink md:flex">
-        {/* Wonde wordmark + product name */}
+        {/* Product mark + name */}
         <div className="relative z-[2] flex items-center gap-3.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/wonde-logo-white.svg"
-            alt="Wonde"
-            className="h-[26px] w-auto"
+            src="/roundup-icon-white.svg"
+            alt="Roundup"
+            className="h-[34px] w-[34px]"
           />
-          <span className="h-6 w-px bg-white/30" aria-hidden />
           <span className="font-head text-[18px] font-bold tracking-[-0.01em]">
             Roundup
           </span>
