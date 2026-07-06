@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
-const COLS = "grid-cols-[1.2fr_1.4fr_1fr_1fr_90px]";
+const COLS = "min-w-[680px] grid-cols-[1.2fr_1.4fr_1fr_1fr_90px]";
 
 type Status = "Pending" | "Draft" | "Sent";
 
@@ -150,7 +150,7 @@ export default async function RoundupsPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
+        <div className="overflow-x-auto rounded-card border border-line bg-surface">
           <div
             className={`grid ${COLS} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-bold tracking-[0.04em] text-muted`}
           >

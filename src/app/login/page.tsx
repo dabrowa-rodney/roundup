@@ -32,8 +32,16 @@ export default function LoginPage() {
       </div>
 
       {/* Right panel — sign in */}
-      <div className="flex items-center justify-center p-10">
+      <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="fade-up w-full max-w-[380px]">
+          {/* Brand row — only on mobile, where the brand panel is hidden */}
+          <div className="mb-8 flex items-center gap-3 md:hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/roundup-icon.svg" alt="" className="h-9 w-9" />
+            <span className="font-head text-[18px] font-bold tracking-[-0.01em]">
+              Roundup
+            </span>
+          </div>
           <div className="font-head text-[28px] font-bold tracking-[-0.02em]">
             Welcome back
           </div>

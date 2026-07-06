@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const COLS = "grid-cols-[1.3fr_2.1fr_0.9fr_auto]";
+const COLS = "min-w-[640px] grid-cols-[1.3fr_2.1fr_0.9fr_auto]";
 
 interface Row {
   templateId: number;
@@ -179,7 +179,7 @@ export function DataSourcesTable() {
   }
 
   return (
-    <div className="overflow-hidden rounded-card border border-line bg-surface">
+    <div className="overflow-x-auto rounded-card border border-line bg-surface">
       <div
         className={`grid ${COLS} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-bold tracking-[0.04em] text-muted`}
       >

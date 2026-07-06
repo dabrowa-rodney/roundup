@@ -20,11 +20,12 @@ export default async function AppLayout({
 
   return (
     <SettingsProvider>
-      <div className="flex min-h-screen">
+      {/* Column on mobile (top bar over content), row on desktop (sidebar
+          beside content). <main> is the single scroll container on both, so
+          each Screen's sticky header keeps working. */}
+      <div className="flex h-screen flex-col lg:flex-row">
         <Sidebar />
-        <main className="sc h-screen min-w-0 flex-1 overflow-auto">
-          {children}
-        </main>
+        <main className="sc min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
     </SettingsProvider>
   );

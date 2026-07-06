@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
 import {
   Database,
   FileText,
   LayoutGrid,
   LogOut,
+  Menu,
   Settings,
   Table,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "./ui";
@@ -79,7 +82,18 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-export function Sidebar() {
+function Brand() {
+  return (
+    <div className="flex items-center gap-2.5">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/roundup-icon.svg" alt="" className="h-8 w-8" />
+      <span className="text-[17px] font-bold tracking-[-0.01em]">Roundup</span>
+    </div>
+  );
+}
+
+/** Nav sections + user footer — shared by the desktop aside and the drawer. */
+function SidebarContent() {
   const pathname = usePathname();
   const { data: session } = useSession();
 
@@ -89,14 +103,7 @@ export function Sidebar() {
   const isAdmin = role === "admin";
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[248px] flex-shrink-0 flex-col border-r border-line bg-surface px-4 py-[22px]">
-      <div className="flex items-center gap-2.5 px-2 pb-[22px] pt-1">
-        <div className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-accent font-head text-[17px] font-extrabold text-accent-ink">
-          R
-        </div>
-        <span className="text-[17px] font-bold tracking-[-0.01em]">Roundup</span>
-      </div>
-
+    <>
       <div className="px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] text-muted">
         THIS WEEK
       </div>
@@ -143,6 +150,62 @@ export function Sidebar() {
           </button>
         )}
       </div>
-    </aside>
+    </>
+  );
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // Navigating closes the drawer.
+  useEffect(() => setOpen(false), [pathname]);
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <aside className="hidden h-full w-[248px] flex-shrink-0 flex-col border-r border-line bg-surface px-4 py-[22px] lg:flex">
+        <div className="px-2 pb-[22px] pt-1">
+          <Brand />
+        </div>
+        <SidebarContent />
+      </aside>
+
+      {/* Mobile top bar */}
+      <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3 lg:hidden">
+        <Brand />
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Open menu"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-ink transition-colors hover:bg-accent-soft"
+        >
+          <Menu size={20} />
+        </button>
+      </header>
+
+      {/* Mobile drawer */}
+      {open && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-ink/30"
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <div className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-surface px-4 py-[22px] shadow-xl">
+            <div className="flex items-center justify-between px-2 pb-[22px] pt-1">
+              <Brand />
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close menu"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-accent-soft"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <SidebarContent />
+          </div>
+        </div>
+      )}
+    </>
   );
 }

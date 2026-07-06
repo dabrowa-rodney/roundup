@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Screen } from "@/components/screen";
 import { Avatar, RoleBadge } from "@/components/ui";
 
-const COLS = "grid-cols-[2fr_1.1fr_1.4fr_80px]";
+const COLS = "min-w-[640px] grid-cols-[2fr_1.1fr_1.4fr_80px]";
 
 interface TeamUser {
   id: number;
@@ -327,7 +327,7 @@ export default function TeamPage() {
           <p className="text-muted">No team members yet. Invite someone to get started!</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-card border border-line bg-surface">
+        <div className="overflow-x-auto rounded-card border border-line bg-surface">
           <div
             className={`grid ${COLS} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-bold tracking-[0.04em] text-muted`}
           >
