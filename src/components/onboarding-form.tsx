@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { slugify, slugProblem } from "@/lib/org";
 
-export function OnboardingForm() {
+export function OnboardingForm({ needsName = false }: { needsName?: boolean }) {
   const router = useRouter();
+  const [ownName, setOwnName] = useState("");
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -25,7 +26,11 @@ export function OnboardingForm() {
       const res = await fetch("/api/orgs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), slug: effectiveSlug }),
+        body: JSON.stringify({
+          name: name.trim(),
+          slug: effectiveSlug,
+          userName: ownName.trim() || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -42,7 +47,11 @@ export function OnboardingForm() {
     }
   };
 
-  const disabled = busy || name.trim().length < 2 || !!problem;
+  const disabled =
+    busy ||
+    name.trim().length < 2 ||
+    !!problem ||
+    (needsName && ownName.trim().length < 2);
 
   return (
     <div className="rounded-card border border-line bg-surface px-7 py-7">
@@ -54,6 +63,21 @@ export function OnboardingForm() {
         summary.
       </p>
 
+      {needsName && (
+        <>
+          <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
+            Your name
+          </label>
+          <input
+            value={ownName}
+            onChange={(e) => setOwnName(e.target.value)}
+            placeholder="e.g. Alex Taylor"
+            autoFocus
+            className="mb-4 w-full rounded-[10px] border border-line bg-bg px-3.5 py-2.5 text-[14px] text-ink"
+          />
+        </>
+      )}
+
       <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
         Organisation name
       </label>
@@ -61,7 +85,7 @@ export function OnboardingForm() {
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="e.g. Acme Ltd"
-        autoFocus
+        autoFocus={!needsName}
         className="mb-4 w-full rounded-[10px] border border-line bg-bg px-3.5 py-2.5 text-[14px] text-ink"
       />
 

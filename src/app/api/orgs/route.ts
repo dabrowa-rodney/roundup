@@ -64,15 +64,20 @@ export async function POST(req: NextRequest) {
     .values({ name, slug })
     .returning({ id: organisations.id });
 
-  // Org defaults + the founding admin.
+  // Org defaults + the founding admin. Email sign-ups carry their name from
+  // the onboarding form (Google identities already have one).
+  const userName =
+    (typeof body.userName === "string" && body.userName.trim()) ||
+    session?.user?.name ||
+    null;
   await db.insert(settings).values({ orgId: org.id });
   await db.insert(users).values({
     orgId: org.id,
     email,
-    name: session?.user?.name || null,
+    name: userName,
     image: session?.user?.image || null,
     role: "admin",
-    avatarColor: avatarColor(session?.user?.name || email),
+    avatarColor: avatarColor(userName || email),
   });
 
   return NextResponse.json({ ok: true, orgId: org.id, slug });

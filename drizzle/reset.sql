@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS "report_assignees" CASCADE;
 DROP TABLE IF EXISTS "report_templates" CASCADE;
 DROP TABLE IF EXISTS "roundup_recipients" CASCADE;
 DROP TABLE IF EXISTS "email_log" CASCADE;
+DROP TABLE IF EXISTS "login_tokens" CASCADE;
 DROP TABLE IF EXISTS "roundups" CASCADE;
 DROP TABLE IF EXISTS "settings" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
@@ -113,6 +114,18 @@ CREATE TABLE "roundups" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "roundups_org_id_week_start_unique" UNIQUE("org_id","week_start")
 );
+
+CREATE TABLE "login_tokens" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"email" text NOT NULL,
+	"name" text,
+	"token_hash" text NOT NULL,
+	"expires_at" timestamp NOT NULL,
+	"used_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "login_tokens_token_hash_unique" UNIQUE("token_hash")
+);
+CREATE INDEX "login_tokens_email_idx" ON "login_tokens" ("email");
 
 CREATE TABLE "email_log" (
 	"id" serial PRIMARY KEY NOT NULL,

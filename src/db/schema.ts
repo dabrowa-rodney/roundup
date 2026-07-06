@@ -22,6 +22,8 @@ import {
 */
 
 // ── Organisations (tenants) ────────────────────────────
+// (Billing lands here later: stripeCustomerId, plan, planStatus — org-level,
+//  so gate features by organisation, never by user.)
 export const organisations = pgTable("organisations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -174,6 +176,20 @@ export const roundupRecipients = pgTable(
   },
   (t) => [unique().on(t.roundupId, t.userId)],
 );
+
+// ── Magic-link sign-in tokens ──────────────────────────
+// One active token per email (request deletes prior ones). Only the SHA-256
+// hash is stored; the raw token exists solely in the emailed link. Tokens are
+// single-use and expire 15 minutes after issue.
+export const loginTokens = pgTable("login_tokens", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  name: text("name"), // carried from the sign-up form for first-time users
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 // ── Email log (one row per batch actually sent) ────────
 // kind: 'reminder1' | 'reminder2' | 'roundup_ready' | 'roundup_sent'

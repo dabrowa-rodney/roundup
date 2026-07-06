@@ -26,7 +26,7 @@ export default async function OnboardingPage() {
             </span>
           </p>
         </div>
-        <OnboardingForm />
+        <OnboardingForm needsName={!session.user?.name} />
         <p className="mt-5 text-center text-[13px] leading-[1.6] text-muted">
           Expecting to join an existing team? Ask your administrator to invite{" "}
           <span className="font-medium text-ink">{session.user?.email}</span>{" "}

@@ -69,4 +69,15 @@ describe("email", () => {
     expect(msg.html).toContain("/roundups/2026-06-29");
     expect(msg.html).toContain("2 on track &amp; 1 &lt;at risk&gt;");
   });
+
+  it("magicLinkEmail carries the sign-in url and expiry note", async () => {
+    const { magicLinkEmail } = await import("./email");
+    const msg = magicLinkEmail({
+      url: "https://roundup.example.com/auth/verify?email=a%40b.com&token=t",
+    });
+    expect(msg.subject).toContain("sign-in link");
+    expect(msg.html).toContain("/auth/verify?email=a%40b.com&token=t");
+    expect(msg.html).toContain("15 minutes");
+  });
+
 });

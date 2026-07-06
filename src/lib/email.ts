@@ -111,6 +111,27 @@ export function reminderEmail(opts: {
   };
 }
 
+/** Magic sign-in link. */
+export function magicLinkEmail(opts: { url: string }): {
+  subject: string;
+  html: string;
+} {
+  return {
+    subject: "Your Roundup sign-in link",
+    html: shell(`
+      <p style="margin:0 0 12px;font-size:15px;">Sign in to Roundup</p>
+      <p style="margin:0;font-size:14px;line-height:1.55;">
+        Click the button below to sign in. The link works once and expires in
+        15 minutes.
+      </p>
+      ${button(opts.url, "Sign in to Roundup")}
+      <p style="margin:18px 0 0;font-size:12.5px;line-height:1.5;color:#8792AD;">
+        If you didn't request this, you can safely ignore this email.
+      </p>
+    `),
+  };
+}
+
 /** The weekly Roundup, sent (or announced) to recipients. */
 export function roundupEmail(opts: {
   weekLabel: string; // "Week 27 · 29 Jun–5 Jul"

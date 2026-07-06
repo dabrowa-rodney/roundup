@@ -1,3 +1,4 @@
+import { EmailSignIn } from "@/components/email-sign-in";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 
 export default function LoginPage() {
@@ -41,15 +42,16 @@ export default function LoginPage() {
             Sign in to your workspace — or create one for your organisation.
           </p>
           <GoogleSignInButton />
-          <div className="my-6 flex items-center gap-3 text-[13px] text-muted">
+          <div className="my-5 flex items-center gap-3 text-[13px] text-muted">
             <div className="h-px flex-1 bg-line" />
-            new to Roundup?
+            or
             <div className="h-px flex-1 bg-line" />
           </div>
-          <p className="text-center text-[13px] leading-[1.6] text-muted">
-            Sign in with Google and you can set up your organisation in under a
-            minute. Joining an existing team? Ask an administrator to invite
-            your email first.
+          <EmailSignIn />
+          <p className="mt-7 text-center text-[13px] leading-[1.6] text-muted">
+            New here? Sign in either way and you can set up your organisation
+            in under a minute. Joining an existing team? Ask an administrator
+            to invite your email first.
           </p>
         </div>
       </div>
