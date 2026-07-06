@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { ArrowLeft, FileText } from "lucide-react";
 import { db } from "@/db";
-import { roundups } from "@/db/schema";
+import { reportInstances, roundups } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { RoundupViewer } from "@/components/roundup-viewer";
@@ -35,6 +35,23 @@ export default async function RoundupViewerPage({
       .limit(1)
   )[0];
 
+  // Generation compiles submitted/locked reports — with none, there is
+  // nothing to preview, so the button is withheld (the API refuses too).
+  const submittedCount = roundup
+    ? 1
+    : ((
+        await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(reportInstances)
+          .where(
+            and(
+              eq(reportInstances.orgId, me.orgId),
+              eq(reportInstances.weekStart, weekIso),
+              inArray(reportInstances.status, ["submitted", "locked"]),
+            ),
+          )
+      )[0]?.count ?? 0);
+
   return (
     <Screen title="Roundup" subtitle={weekLabel(parseISODate(weekIso))}>
       {roundup?.skimJson && roundup?.fullJson ? (
@@ -45,13 +62,25 @@ export default async function RoundupViewerPage({
           sent={roundup.status === "sent"}
         />
       ) : (
-        <NotGenerated week={weekIso} isAdmin={isAdmin} />
+        <NotGenerated
+          week={weekIso}
+          isAdmin={isAdmin}
+          hasReports={submittedCount > 0}
+        />
       )}
     </Screen>
   );
 }
 
-function NotGenerated({ week, isAdmin }: { week: string; isAdmin: boolean }) {
+function NotGenerated({
+  week,
+  isAdmin,
+  hasReports,
+}: {
+  week: string;
+  isAdmin: boolean;
+  hasReports: boolean;
+}) {
   return (
     <div className="mx-auto max-w-[680px]">
       <Link
@@ -71,10 +100,15 @@ function NotGenerated({ week, isAdmin }: { week: string; isAdmin: boolean }) {
           Compile this week&apos;s submitted reports into a Roundup summary —
           risks, highlights, key metrics and a per-team rundown.
         </p>
-        {isAdmin ? (
+        {isAdmin && hasReports ? (
           <div className="flex justify-center">
             <GenerateRoundupButton week={week} />
           </div>
+        ) : isAdmin ? (
+          <p className="text-[13px] font-medium text-muted">
+            No reports have been submitted for this week yet — generating
+            unlocks once the first one is in.
+          </p>
         ) : (
           <p className="text-[13px] text-muted">
             An administrator can generate it once reports are in.

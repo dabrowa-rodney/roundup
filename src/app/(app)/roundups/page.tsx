@@ -129,15 +129,27 @@ export default async function RoundupsPage() {
             {totalExpected === 1 ? "" : "s"} in — closes {closeDay} {closeTime}
           </div>
           <div className="mt-1 text-[13.5px] opacity-85">
-            Generate the Roundup once the window closes, or draft a preview now.
+            {submittedThisWeek > 0
+              ? "Generate the Roundup once the window closes, or draft a preview now."
+              : "A preview unlocks once the first report is submitted."}
           </div>
         </div>
-        <Link
-          href={`/roundups/${weekIso}`}
-          className="rounded-full bg-accent-ink px-[22px] py-3 text-sm font-bold text-accent"
-        >
-          Generate preview
-        </Link>
+        {submittedThisWeek > 0 ? (
+          <Link
+            href={`/roundups/${weekIso}`}
+            className="rounded-full bg-accent-ink px-[22px] py-3 text-sm font-bold text-accent"
+          >
+            Generate preview
+          </Link>
+        ) : (
+          <span
+            aria-disabled
+            title="No reports submitted yet"
+            className="cursor-not-allowed rounded-full bg-accent-ink/50 px-[22px] py-3 text-sm font-bold text-accent/70"
+          >
+            Generate preview
+          </span>
+        )}
       </div>
 
       {/* Weeks table */}

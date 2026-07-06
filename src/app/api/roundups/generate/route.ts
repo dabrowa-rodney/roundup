@@ -84,6 +84,15 @@ export async function POST(req: NextRequest) {
       ),
     );
 
+  // Nothing submitted → nothing to compile. Refuse rather than produce an
+  // empty Roundup (the compiler only reads submitted/locked reports).
+  if (insts.length === 0) {
+    return NextResponse.json(
+      { error: "No reports have been submitted for this week yet" },
+      { status: 409 },
+    );
+  }
+
   // Their answers, joined to question text/type/config.
   const answersByInstance = new Map<number, AnswerInput[]>();
   const instIds = insts.map((i) => i.id);
