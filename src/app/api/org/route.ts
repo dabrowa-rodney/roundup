@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organisations } from "@/db/schema";
 import { encryptSecret } from "@/lib/crypto";
+import { slugProblem } from "@/lib/org";
 import { getSessionUser } from "@/lib/session";
 
 // GET /api/org — the caller's organisation (never returns the stored key).
@@ -30,8 +31,8 @@ export async function GET() {
   });
 }
 
-// PATCH /api/org — update org name and/or the Anthropic API key.
-//   { name?: string, anthropicApiKey?: string | null }
+// PATCH /api/org — update org name, subdomain slug and/or the Anthropic API key.
+//   { name?: string, slug?: string, anthropicApiKey?: string | null }
 // The key is write-only: stored encrypted, never echoed back. null clears it.
 export async function PATCH(req: NextRequest) {
   const me = await getSessionUser();
@@ -54,6 +55,27 @@ export async function PATCH(req: NextRequest) {
       );
     }
     updates.name = name;
+  }
+
+  if (body.slug !== undefined) {
+    const slug =
+      typeof body.slug === "string" ? body.slug.trim().toLowerCase() : "";
+    const problem = slugProblem(slug);
+    if (problem) {
+      return NextResponse.json({ error: problem }, { status: 400 });
+    }
+    const taken = await db
+      .select({ id: organisations.id })
+      .from(organisations)
+      .where(eq(organisations.slug, slug))
+      .limit(1);
+    if (taken.length > 0 && taken[0].id !== me.orgId) {
+      return NextResponse.json(
+        { error: "That workspace URL is taken — pick another" },
+        { status: 409 },
+      );
+    }
+    updates.slug = slug;
   }
 
   if (body.anthropicApiKey !== undefined) {

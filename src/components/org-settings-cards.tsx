@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check, KeyRound, Sparkles } from "lucide-react";
+import { slugProblem } from "@/lib/org";
 
 interface OrgInfo {
   name: string;
@@ -19,6 +20,11 @@ export function OrgSettingsCards() {
   const [savingName, setSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
 
+  const [slug, setSlug] = useState("");
+  const [savingSlug, setSavingSlug] = useState(false);
+  const [slugSaved, setSlugSaved] = useState(false);
+  const [slugError, setSlugError] = useState("");
+
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState("");
@@ -30,6 +36,7 @@ export function OrgSettingsCards() {
         if (d?.org) {
           setOrg(d.org);
           setName(d.org.name);
+          setSlug(d.org.slug);
         }
       })
       .catch(() => {});
@@ -54,6 +61,32 @@ export function OrgSettingsCards() {
       }
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const saveSlug = async () => {
+    setSavingSlug(true);
+    setSlugSaved(false);
+    setSlugError("");
+    try {
+      const res = await fetch("/api/org", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: slug.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok && d.org) {
+        setOrg(d.org);
+        setSlug(d.org.slug);
+        setSlugSaved(true);
+        setTimeout(() => setSlugSaved(false), 2000);
+      } else {
+        setSlugError(d.error || "Couldn't save the workspace URL — try again.");
+      }
+    } catch {
+      setSlugError("Couldn't save the workspace URL — try again.");
+    } finally {
+      setSavingSlug(false);
     }
   };
 
@@ -109,12 +142,48 @@ export function OrgSettingsCards() {
             {savingName ? "Saving…" : nameSaved ? "Saved ✓" : "Save"}
           </button>
         </div>
-        <div className="mt-3.5 text-[12.5px] text-muted">
-          Workspace:{" "}
-          <span className="font-mono font-medium text-ink">
-            {org.slug}.roundup.work
-          </span>{" "}
-          — custom addresses are coming soon.
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <label className="mb-1.5 block text-[12.5px] font-semibold text-muted">
+              Workspace URL
+            </label>
+            <div className="flex items-center overflow-hidden rounded-[9px] border border-line bg-bg">
+              <input
+                value={slug}
+                onChange={(e) => {
+                  setSlug(e.target.value.toLowerCase());
+                  setSlugError("");
+                }}
+                className="min-w-0 flex-1 bg-transparent px-3 py-[9px] font-mono text-[13.5px] text-ink outline-none"
+              />
+              <span className="whitespace-nowrap px-3 font-mono text-[13px] text-muted">
+                .roundup.work
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={saveSlug}
+            disabled={
+              savingSlug ||
+              slug === org.slug ||
+              !!slugProblem(slug.trim())
+            }
+            className="rounded-full bg-accent px-4 py-[9px] text-[13.5px] font-bold text-accent-ink disabled:opacity-40"
+          >
+            {savingSlug ? "Saving…" : slugSaved ? "Saved ✓" : "Save"}
+          </button>
+        </div>
+        <div className="mt-2 min-h-[18px] text-[12.5px]">
+          {slugError || (slug !== org.slug && slugProblem(slug.trim())) ? (
+            <span className="font-medium text-bad">
+              {slugError || slugProblem(slug.trim())}
+            </span>
+          ) : (
+            <span className="text-muted">
+              Changing this changes your workspace address — links to the old
+              one will stop working.
+            </span>
+          )}
         </div>
       </div>
 
