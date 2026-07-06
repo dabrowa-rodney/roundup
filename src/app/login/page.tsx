@@ -1,8 +1,6 @@
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 
 export default function LoginPage() {
-  const closeLine = "Weekly updates in, leadership summary out.";
-
   return (
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[1.05fr_0.95fr]">
       {/* Left panel — brand */}
@@ -29,7 +27,6 @@ export default function LoginPage() {
             your data, and writes the summary your senior team actually reads.
           </p>
         </div>
-        <div className="relative z-[2] text-[13px] opacity-75">{closeLine}</div>
         <div className="absolute -bottom-[120px] -right-[120px] h-[420px] w-[420px] rounded-full bg-white/[0.07]" />
         <div className="absolute -top-[90px] right-10 h-[240px] w-[240px] rounded-full bg-white/[0.06]" />
       </div>
