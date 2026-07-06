@@ -140,6 +140,24 @@ export async function PATCH(
 
   const body = await req.json();
 
+  // Reorder: { reorder: [questionId, ...] } — ids in their new display order.
+  // Each update is scoped to this template, so foreign ids are no-ops.
+  if (Array.isArray(body.reorder)) {
+    const ids = body.reorder.filter((x: unknown) => Number.isInteger(x));
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Nothing to reorder" }, { status: 400 });
+    }
+    for (let i = 0; i < ids.length; i++) {
+      await db
+        .update(questions)
+        .set({ order: i })
+        .where(
+          and(eq(questions.id, ids[i]), eq(questions.templateId, templateId)),
+        );
+    }
+    return NextResponse.json({ success: true });
+  }
+
   // Single question update: { questionId, text?, type?, config?, order? }
   if (body.questionId) {
     const updates: Record<string, unknown> = {};

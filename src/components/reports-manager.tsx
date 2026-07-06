@@ -300,6 +300,10 @@ export function ReportsManager() {
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [savingAssignees, setSavingAssignees] = useState(false);
+  // Drag-to-reorder: rows are only draggable while the grip is held (armed),
+  // and the list live-reorders as the dragged row passes over its siblings.
+  const [armedId, setArmedId] = useState<number | null>(null);
+  const [dragId, setDragId] = useState<number | null>(null);
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -375,6 +379,36 @@ export function ReportsManager() {
       });
       fetchQuestions(selected);
     } catch {}
+  };
+
+  const handleDragOver = (overId: number) => {
+    if (dragId === null || dragId === overId) return;
+    setQuestions((prev) => {
+      const from = prev.findIndex((q) => q.id === dragId);
+      const to = prev.findIndex((q) => q.id === overId);
+      if (from === -1 || to === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
+  const handleDragEnd = async () => {
+    setArmedId(null);
+    if (dragId === null) return;
+    setDragId(null);
+    if (!selected) return;
+    try {
+      const res = await fetch(`/api/templates/${selected}/questions`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reorder: questions.map((q) => q.id) }),
+      });
+      if (!res.ok) fetchQuestions(selected);
+    } catch {
+      fetchQuestions(selected);
+    }
   };
 
   const handleUpdateTemplateName = async (newName: string) => {
@@ -594,8 +628,34 @@ export function ReportsManager() {
             <SectionLabel className="mb-2.5 tracking-[0.05em]">Questions</SectionLabel>
             <div className="flex flex-col gap-2">
               {questions.map((q) => (
-                <div key={q.id} className="flex items-center gap-[11px] rounded-[11px] border border-line bg-bg px-3 py-[11px]">
-                  <GripVertical size={15} className="flex-shrink-0 cursor-grab text-muted" />
+                <div
+                  key={q.id}
+                  draggable={armedId === q.id}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragId(q.id);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    handleDragOver(q.id);
+                  }}
+                  onDrop={(e) => e.preventDefault()}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-[11px] rounded-[11px] border bg-bg px-3 py-[11px] ${
+                    dragId === q.id
+                      ? "border-accent opacity-60"
+                      : "border-line"
+                  }`}
+                >
+                  <span
+                    onMouseDown={() => setArmedId(q.id)}
+                    onMouseUp={() => setArmedId(null)}
+                    aria-label="Drag to reorder"
+                    title="Drag to reorder"
+                    className="flex-shrink-0 cursor-grab active:cursor-grabbing"
+                  >
+                    <GripVertical size={15} className="text-muted" />
+                  </span>
                   <span className="flex-1 truncate text-[13.5px]">{q.text}</span>
                   <span className="whitespace-nowrap rounded-[7px] bg-accent-soft px-[9px] py-[3px] text-[11px] font-semibold text-accent">
                     {TYPE_LABELS[q.type] || q.type}
