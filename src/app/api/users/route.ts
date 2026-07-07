@@ -19,6 +19,7 @@ export async function GET() {
       image: users.image,
       role: users.role,
       avatarColor: users.avatarColor,
+      lastLoginAt: users.lastLoginAt,
       createdAt: users.createdAt,
     })
     .from(users)

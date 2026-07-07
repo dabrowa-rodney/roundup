@@ -66,6 +66,7 @@ export const authOptions: NextAuthOptions = {
               account?.provider === "google"
                 ? account.providerAccountId
                 : existing[0].googleId,
+            lastLoginAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(users.email, email));

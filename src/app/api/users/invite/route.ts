@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { users } from "@/db/schema";
+import { organisations, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
+import { emailConfigured, inviteEmail, sendEmail } from "@/lib/email";
 import { getSessionUser } from "@/lib/session";
 
 // POST /api/users/invite — pre-create a member of the caller's org; when that
@@ -59,5 +60,24 @@ export async function POST(req: NextRequest) {
     })
     .returning();
 
-  return NextResponse.json({ user: inserted[0] }, { status: 201 });
+  // Tell them (best effort — the invite stands even if the email fails).
+  let emailed = false;
+  if (emailConfigured()) {
+    const org = (
+      await db
+        .select({ name: organisations.name })
+        .from(organisations)
+        .where(eq(organisations.id, me.orgId))
+        .limit(1)
+    )[0];
+    emailed = await sendEmail({
+      to: normalizedEmail,
+      ...inviteEmail({
+        inviterName: me.name || me.email,
+        orgName: org?.name ?? "your team",
+      }),
+    });
+  }
+
+  return NextResponse.json({ user: inserted[0], emailed }, { status: 201 });
 }

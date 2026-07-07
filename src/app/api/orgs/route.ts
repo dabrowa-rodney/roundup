@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
     image: session?.user?.image || null,
     role: "admin",
     avatarColor: avatarColor(userName || email),
+    lastLoginAt: new Date(), // they're signed in right now
   });
 
   return NextResponse.json({ ok: true, orgId: org.id, slug });

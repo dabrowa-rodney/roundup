@@ -111,6 +111,31 @@ export function reminderEmail(opts: {
   };
 }
 
+/** Invitation to join an organisation on Roundup. */
+export function inviteEmail(opts: {
+  inviterName: string;
+  orgName: string;
+}): { subject: string; html: string } {
+  const inviter = escapeHtml(opts.inviterName);
+  const org = escapeHtml(opts.orgName);
+  return {
+    subject: `${opts.inviterName} invited you to ${opts.orgName} on Roundup`,
+    html: shell(`
+      <p style="margin:0 0 12px;font-size:15px;">You've been invited</p>
+      <p style="margin:0;font-size:14px;line-height:1.55;">
+        <strong>${inviter}</strong> has invited you to join
+        <strong>${org}</strong> on Roundup — the place your team files short
+        weekly updates that roll up into one leadership summary.
+      </p>
+      <p style="margin:12px 0 0;font-size:14px;line-height:1.55;">
+        Sign in with this email address (Google or an emailed link) and
+        you'll land straight in the team.
+      </p>
+      ${button(appUrl("/login"), "Join on Roundup")}
+    `),
+  };
+}
+
 /** Magic sign-in link. */
 export function magicLinkEmail(opts: { url: string }): {
   subject: string;

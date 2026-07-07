@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { Screen } from "@/components/screen";
 import { Avatar, RoleBadge } from "@/components/ui";
+import { relativeTime } from "@/lib/dates";
 
-const COLS = "min-w-[640px] grid-cols-[2fr_1.1fr_1.4fr_80px]";
+const COLS = "min-w-[820px] grid-cols-[2fr_1fr_1.2fr_1.5fr_80px]";
 
 interface TeamUser {
   id: number;
@@ -13,7 +14,61 @@ interface TeamUser {
   image: string | null;
   role: string;
   avatarColor: string | null;
+  lastLoginAt: string | null;
   areas: string[];
+}
+
+/** "Last signed in" cell: a time for members, invite state + resend for the rest. */
+function LastLoginCell({ user }: { user: TeamUser }) {
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "failed">(
+    "idle",
+  );
+
+  if (user.lastLoginAt) {
+    return (
+      <span className="text-[13px] text-muted">
+        {relativeTime(user.lastLoginAt)}
+      </span>
+    );
+  }
+
+  const resend = async () => {
+    setState("sending");
+    try {
+      const res = await fetch(`/api/users/${user.id}/invite`, {
+        method: "POST",
+      });
+      setState(res.ok ? "sent" : "failed");
+      if (res.ok) setTimeout(() => setState("idle"), 4000);
+    } catch {
+      setState("failed");
+    }
+  };
+
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="whitespace-nowrap rounded-md bg-warn-soft px-2 py-0.5 text-[11.5px] font-semibold text-warn-ink">
+        Invite pending
+      </span>
+      {state === "sent" ? (
+        <span className="text-[12px] font-semibold text-good">Invite sent ✓</span>
+      ) : (
+        <button
+          onClick={resend}
+          disabled={state === "sending"}
+          className={`whitespace-nowrap text-[12px] font-semibold underline-offset-2 hover:underline disabled:opacity-50 ${
+            state === "failed" ? "text-bad" : "text-accent"
+          }`}
+        >
+          {state === "sending"
+            ? "Sending…"
+            : state === "failed"
+              ? "Failed — retry"
+              : "Resend invite"}
+        </button>
+      )}
+    </span>
+  );
 }
 
 interface TeamStats {
@@ -334,6 +389,7 @@ export default function TeamPage() {
             <span>MEMBER</span>
             <span>ROLE</span>
             <span>ASSIGNED REPORT</span>
+            <span>LAST SIGNED IN</span>
             <span />
           </div>
           {teamUsers.map((u) => (
@@ -354,6 +410,7 @@ export default function TeamPage() {
               <span className="text-[13.5px] text-ink">
                 {u.areas.length > 0 ? u.areas.join(", ") : "—"}
               </span>
+              <LastLoginCell user={u} />
               <button
                 onClick={() => setEditingUser(u)}
                 aria-label={`Actions for ${u.name}`}

@@ -166,6 +166,7 @@ CREATE TABLE "users" (
 	"google_id" text,
 	"role" text DEFAULT 'contributor' NOT NULL,
 	"avatar_color" text,
+	"last_login_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email")

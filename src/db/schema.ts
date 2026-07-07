@@ -49,6 +49,8 @@ export const users = pgTable("users", {
   googleId: text("google_id"),
   role: text("role").notNull().default("contributor"),
   avatarColor: text("avatar_color"),
+  // Stamped on every sign-in; null = invited but never signed in yet.
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
