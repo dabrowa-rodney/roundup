@@ -1,9 +1,9 @@
-<svg width="380" height="380" viewBox="0 0 380 380" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <mask id="zigzag-cutout">
-      <rect width="380" height="380" fill="#FFFFFF"></rect>
-      <path d="M 143 116 L 236 116 L 152 204 L 236 204 L 143 266 L 232 266" stroke="#000000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
-    </mask>
-  </defs>
-  <path d="M 108 70 L 272 70 L 328 190 L 272 310 L 108 310 L 52 190 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="56" stroke-linejoin="round" mask="url(#zigzag-cutout)"></path>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1178 1180">
+  <mask id="rb-cut-w">
+    <rect width="1178" height="1180" fill="white"></rect>
+    <rect x="241" y="299" width="286" height="573" rx="143" fill="black"></rect>
+    <path d="M 530 299 L 779 299 A 149 149 0 0 1 779 597 L 646 597 Z" fill="black"></path>
+    <path d="M 529 588 L 779 588 A 146 146 0 0 1 779 880 L 636 880 Z" fill="black"></path>
+  </mask>
+  <rect x="51" y="53" width="1066" height="1066" rx="232" fill="#FFFFFF" mask="url(#rb-cut-w)"></rect>
 </svg>
