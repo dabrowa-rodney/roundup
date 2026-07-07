@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Check, GripVertical, Plus, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { SectionLabel } from "./ui";
 import { initials, avatarColor } from "@/lib/avatar";
 
@@ -394,21 +402,37 @@ export function ReportsManager() {
     });
   };
 
-  const handleDragEnd = async () => {
-    setArmedId(null);
-    if (dragId === null) return;
-    setDragId(null);
+  const persistOrder = async (list: Question[]) => {
     if (!selected) return;
     try {
       const res = await fetch(`/api/templates/${selected}/questions`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reorder: questions.map((q) => q.id) }),
+        body: JSON.stringify({ reorder: list.map((q) => q.id) }),
       });
       if (!res.ok) fetchQuestions(selected);
     } catch {
       fetchQuestions(selected);
     }
+  };
+
+  const handleDragEnd = async () => {
+    setArmedId(null);
+    if (dragId === null) return;
+    setDragId(null);
+    await persistOrder(questions);
+  };
+
+  // Up/down fallback for touch screens, where HTML5 drag events don't fire.
+  const moveQuestion = (qId: number, dir: -1 | 1) => {
+    const from = questions.findIndex((q) => q.id === qId);
+    const to = from + dir;
+    if (from === -1 || to < 0 || to >= questions.length) return;
+    const next = [...questions];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setQuestions(next);
+    persistOrder(next);
   };
 
   const handleUpdateTemplateName = async (newName: string) => {
@@ -652,9 +676,28 @@ export function ReportsManager() {
                     onMouseUp={() => setArmedId(null)}
                     aria-label="Drag to reorder"
                     title="Drag to reorder"
-                    className="flex-shrink-0 cursor-grab active:cursor-grabbing"
+                    className="hidden flex-shrink-0 cursor-grab active:cursor-grabbing lg:block"
                   >
                     <GripVertical size={15} className="text-muted" />
+                  </span>
+                  {/* Touch screens can't use HTML5 drag — nudge buttons instead */}
+                  <span className="flex flex-shrink-0 flex-col lg:hidden">
+                    <button
+                      onClick={() => moveQuestion(q.id, -1)}
+                      disabled={questions[0]?.id === q.id}
+                      aria-label="Move up"
+                      className="flex h-5 w-6 items-center justify-center rounded text-muted hover:bg-accent-soft hover:text-accent disabled:opacity-30"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    <button
+                      onClick={() => moveQuestion(q.id, 1)}
+                      disabled={questions[questions.length - 1]?.id === q.id}
+                      aria-label="Move down"
+                      className="flex h-5 w-6 items-center justify-center rounded text-muted hover:bg-accent-soft hover:text-accent disabled:opacity-30"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
                   </span>
                   <span className="flex-1 truncate text-[13.5px]">{q.text}</span>
                   <span className="whitespace-nowrap rounded-[7px] bg-accent-soft px-[9px] py-[3px] text-[11px] font-semibold text-accent">
