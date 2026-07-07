@@ -6,7 +6,38 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { consumeLoginToken } from "@/lib/magic-link";
 
+// Share the session across *.roundup.work (console today, per-org subdomains
+// next) by scoping the session cookie to the root domain. Only in production —
+// localhost must keep host-scoped cookies. NOTE: turning this on invalidates
+// existing sessions once (everyone signs in again).
+const rootDomain = (() => {
+  try {
+    const host = new URL(process.env.NEXTAUTH_URL ?? "").hostname;
+    const parts = host.split(".");
+    return parts.length >= 2 ? "." + parts.slice(-2).join(".") : null;
+  } catch {
+    return null;
+  }
+})();
+const useSecureCookies = (process.env.NEXTAUTH_URL ?? "").startsWith("https://");
+
 export const authOptions: NextAuthOptions = {
+  ...(useSecureCookies && rootDomain
+    ? {
+        cookies: {
+          sessionToken: {
+            name: "__Secure-next-auth.session-token",
+            options: {
+              httpOnly: true,
+              sameSite: "lax" as const,
+              path: "/",
+              secure: true,
+              domain: rootDomain,
+            },
+          },
+        },
+      }
+    : {}),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -44,6 +75,22 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    // Allow post-login redirects to our own subdomains (e.g. the console).
+    async redirect({ url, baseUrl }) {
+      try {
+        const u = new URL(url, baseUrl);
+        if (u.origin === baseUrl) return u.toString();
+        if (
+          rootDomain &&
+          u.protocol === "https:" &&
+          (u.hostname === rootDomain.slice(1) ||
+            u.hostname.endsWith(rootDomain))
+        ) {
+          return u.toString();
+        }
+      } catch {}
+      return baseUrl;
+    },
     async signIn({ user, account }) {
       if (!user.email) return false;
       const email = user.email.toLowerCase();
