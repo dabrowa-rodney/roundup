@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { sql } from "drizzle-orm";
@@ -182,9 +183,10 @@ export default async function ConsolePage() {
             <span>LAST ACTIVE</span>
           </div>
           {rows.map((r) => (
-            <div
+            <Link
+              href={`/console/orgs/${r.id}`}
               key={r.id}
-              className={`grid ${COLS} items-center gap-3.5 border-t border-line px-[22px] py-[15px]`}
+              className={`grid ${COLS} items-center gap-3.5 border-t border-line px-[22px] py-[15px] transition-colors hover:bg-accent-soft/30`}
             >
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{r.name}</div>
@@ -231,7 +233,7 @@ export default async function ConsolePage() {
               <span className="text-[13px] text-muted">
                 {r.lastActive ? relativeTime(r.lastActive) : "never"}
               </span>
-            </div>
+            </Link>
           ))}
         </div>
 
