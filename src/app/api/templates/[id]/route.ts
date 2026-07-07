@@ -48,6 +48,14 @@ export async function PATCH(
   if (body.area !== undefined) updates.area = body.area?.trim() || null;
   if (body.cadence !== undefined) updates.cadence = body.cadence;
   if (body.dataSourceUrl !== undefined) updates.dataSourceUrl = body.dataSourceUrl?.trim() || null;
+  // Archive / unarchive (reversible; nothing is ever removed by this).
+  if (body.archived === true) updates.archivedAt = new Date();
+  if (body.archived === false) updates.archivedAt = null;
+  // Restore a soft-deleted template (back to active within the 7-day window).
+  if (body.restore === true) {
+    updates.deletedAt = null;
+    updates.archivedAt = null;
+  }
 
   // Handle assignees update — only users from the caller's own org.
   if (body.assigneeIds !== undefined) {
@@ -96,7 +104,10 @@ export async function PATCH(
   return NextResponse.json({ success: true });
 }
 
-// DELETE /api/templates/[id] — soft-delete (archive) a template
+// DELETE /api/templates/[id] — soft delete. The template disappears
+// everywhere immediately (deleted implies archived) and the lifecycle cron
+// permanently purges it — instances and answers included — after 7 days.
+// Until then PATCH { restore: true } brings it back.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -115,20 +126,21 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
   }
 
+  const now = new Date();
   const updated = await db
     .update(reportTemplates)
-    .set({ archivedAt: new Date() })
+    .set({ deletedAt: now, archivedAt: now })
     .where(
       and(
         eq(reportTemplates.id, templateId),
         eq(reportTemplates.orgId, me.orgId),
       ),
     )
-    .returning();
+    .returning({ id: reportTemplates.id, deletedAt: reportTemplates.deletedAt });
 
   if (!updated.length) {
     return NextResponse.json({ error: "Template not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, deletedAt: updated[0].deletedAt });
 }

@@ -54,6 +54,10 @@ export const users = pgTable("users", {
 });
 
 // ── Report templates ───────────────────────────────────
+// Lifecycle: active → archived (reversible, keeps everything) → deleted
+// (7-day grace, then the cron purges the template and its instances/answers).
+// A deleted template ALWAYS also has archivedAt set, so every "active"
+// query (isNull(archivedAt)) excludes deleted templates by construction.
 export const reportTemplates = pgTable("report_templates", {
   id: serial("id").primaryKey(),
   orgId: integer("org_id")
@@ -64,6 +68,7 @@ export const reportTemplates = pgTable("report_templates", {
   cadence: text("cadence").notNull().default("weekly"),
   dataSourceUrl: text("data_source_url"),
   archivedAt: timestamp("archived_at"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

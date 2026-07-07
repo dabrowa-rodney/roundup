@@ -11,15 +11,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Everything not yet purged — active, archived, and recently deleted.
+  // Clients split on archivedAt/deletedAt; the deleted group is what the
+  // 7-day "restore" window shows.
   const templates = await db
     .select()
     .from(reportTemplates)
-    .where(
-      and(
-        eq(reportTemplates.orgId, me.orgId),
-        isNull(reportTemplates.archivedAt),
-      ),
-    )
+    .where(eq(reportTemplates.orgId, me.orgId))
     .orderBy(asc(reportTemplates.name));
   const templateIds = templates.map((t) => t.id);
 

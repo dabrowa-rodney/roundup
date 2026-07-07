@@ -92,6 +92,7 @@ CREATE TABLE "report_templates" (
 	"cadence" text DEFAULT 'weekly' NOT NULL,
 	"data_source_url" text,
 	"archived_at" timestamp,
+	"deleted_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 

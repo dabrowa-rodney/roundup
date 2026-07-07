@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   Check,
   ChevronDown,
   ChevronUp,
   GripVertical,
   Plus,
+  RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
@@ -32,8 +35,18 @@ interface Template {
   area: string | null;
   cadence: string;
   dataSourceUrl: string | null;
+  archivedAt: string | null;
+  deletedAt: string | null;
   qCount: number;
   assignees: TemplateAssignee[];
+}
+
+const PURGE_DAYS = 7;
+
+/** Whole days until a deleted template is purged (min 0). */
+function daysUntilPurge(deletedAt: string): number {
+  const purgeAt = new Date(deletedAt).getTime() + PURGE_DAYS * 86_400_000;
+  return Math.max(0, Math.ceil((purgeAt - Date.now()) / 86_400_000));
 }
 
 interface Question {
@@ -298,6 +311,71 @@ function AddQuestionModal({
   );
 }
 
+function DeleteTemplateModal({
+  template,
+  onClose,
+  onArchive,
+  onDelete,
+}: {
+  template: Template | null;
+  onClose: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!template) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-xl">
+        <h2 className="font-head text-lg font-bold">
+          Delete “{template.name}”?
+        </h2>
+        <div className="mt-3 rounded-xl border border-bad/30 bg-red-tint/60 px-4 py-3 text-[13.5px] leading-[1.55] text-bad">
+          <strong>This deletes the report and all of its data</strong> — every
+          question and every past submission. It will be permanently erased
+          after {PURGE_DAYS} days; until then you can restore it from the
+          “Recently deleted” list.
+        </div>
+        <p className="mt-3 text-[13.5px] leading-[1.55] text-muted">
+          If you just want to stop the report going out each week,{" "}
+          <strong className="text-ink">archiving is the safer choice</strong> —
+          it keeps every past submission and can be undone at any time.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={async () => {
+              setBusy(true);
+              await onArchive();
+              onClose();
+            }}
+            disabled={busy}
+            className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40"
+          >
+            Archive instead
+          </button>
+          <button
+            onClick={async () => {
+              setBusy(true);
+              await onDelete();
+              onClose();
+            }}
+            disabled={busy}
+            className="rounded-full bg-bad px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+          >
+            Delete report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ReportsManager() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -308,6 +386,7 @@ export function ReportsManager() {
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [savingAssignees, setSavingAssignees] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Template | null>(null);
   // Drag-to-reorder: rows are only draggable while the grip is held (armed),
   // and the list live-reorders as the dragged row passes over its siblings.
   const [armedId, setArmedId] = useState<number | null>(null);
@@ -319,8 +398,11 @@ export function ReportsManager() {
       if (res.ok) {
         const data = await res.json();
         setTemplates(data.templates);
-        if (data.templates.length > 0 && selected === null) {
-          setSelected(data.templates[0].id);
+        const actives = (data.templates as Template[]).filter(
+          (t) => !t.archivedAt,
+        );
+        if (actives.length > 0 && selected === null) {
+          setSelected(actives[0].id);
         }
       }
     } catch {} finally {
@@ -366,13 +448,39 @@ export function ReportsManager() {
 
   const selectedTemplate = templates.find((t) => t.id === selected);
 
-  const handleArchiveTemplate = async () => {
-    if (!selected || !selectedTemplate) return;
-    if (!confirm(`Archive "${selectedTemplate.name}"? It won't be assigned for future weeks.`)) return;
+  const setArchived = async (id: number, archived: boolean) => {
     try {
-      await fetch(`/api/templates/${selected}`, { method: "DELETE" });
-      setSelected(null);
-      setQuestions([]);
+      await fetch(`/api/templates/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      if (archived && id === selected) {
+        setSelected(null);
+        setQuestions([]);
+      }
+      fetchTemplates();
+    } catch {}
+  };
+
+  const deleteTemplate = async (id: number) => {
+    try {
+      await fetch(`/api/templates/${id}`, { method: "DELETE" });
+      if (id === selected) {
+        setSelected(null);
+        setQuestions([]);
+      }
+      fetchTemplates();
+    } catch {}
+  };
+
+  const restoreTemplate = async (id: number) => {
+    try {
+      await fetch(`/api/templates/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restore: true }),
+      });
       fetchTemplates();
     } catch {}
   };
@@ -447,6 +555,18 @@ export function ReportsManager() {
     } catch {}
   };
 
+  const handleUpdateTemplateArea = async (newArea: string) => {
+    if (!selected) return;
+    try {
+      await fetch(`/api/templates/${selected}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ area: newArea.trim() }),
+      });
+      fetchTemplates();
+    } catch {}
+  };
+
   // Assign / unassign a user to the selected template. The API replaces the
   // full assignee set, so we send the whole next list of user ids.
   const toggleAssignee = async (userId: number) => {
@@ -480,6 +600,16 @@ export function ReportsManager() {
         onClose={() => setShowNewTemplate(false)}
         onCreated={fetchTemplates}
       />
+      <DeleteTemplateModal
+        template={confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onArchive={async () => {
+          if (confirmDelete) await setArchived(confirmDelete.id, true);
+        }}
+        onDelete={async () => {
+          if (confirmDelete) await deleteTemplate(confirmDelete.id);
+        }}
+      />
       {selected !== null && (
         <AddQuestionModal
           open={showAddQuestion}
@@ -503,13 +633,13 @@ export function ReportsManager() {
             </button>
           </div>
 
-          {templates.length === 0 ? (
+          {templates.filter((t) => !t.archivedAt).length === 0 ? (
             <div className="rounded-card border border-line bg-surface p-8 text-center text-muted">
               No report templates yet. Create one to get started!
             </div>
           ) : (
             <div className="flex flex-col gap-2.5">
-              {templates.map((r, i) => {
+              {templates.filter((t) => !t.archivedAt).map((r, i) => {
                 const active = r.id === selected;
                 const edgeColor = EDGE_COLORS[i % EDGE_COLORS.length];
                 return (
@@ -546,6 +676,88 @@ export function ReportsManager() {
               })}
             </div>
           )}
+
+          {/* Archived — reversible, nothing deleted */}
+          {templates.some((t) => t.archivedAt && !t.deletedAt) && (
+            <>
+              <SectionLabel className="mb-2.5 mt-7 tracking-[0.05em]">
+                Archived
+              </SectionLabel>
+              <div className="flex flex-col gap-2">
+                {templates
+                  .filter((t) => t.archivedAt && !t.deletedAt)
+                  .map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center gap-3.5 rounded-[14px] border border-dashed border-line bg-surface/60 px-[18px] py-3"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-head text-[14px] font-bold text-muted">
+                          {r.name}
+                        </div>
+                        <div className="text-[12px] text-muted">
+                          Archived — not assigned for new weeks; all past
+                          submissions kept.
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setArchived(r.id, false)}
+                        className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-ink hover:border-accent"
+                      >
+                        <ArchiveRestore size={14} /> Unarchive
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(r)}
+                        aria-label={`Delete ${r.name}`}
+                        title="Delete report"
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted hover:bg-red-tint hover:text-bad"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </>
+          )}
+
+          {/* Recently deleted — restorable until the purge date */}
+          {templates.some((t) => t.deletedAt) && (
+            <>
+              <SectionLabel className="mb-2.5 mt-7 tracking-[0.05em]">
+                Recently deleted
+              </SectionLabel>
+              <div className="flex flex-col gap-2">
+                {templates
+                  .filter((t) => t.deletedAt)
+                  .map((r) => {
+                    const days = daysUntilPurge(r.deletedAt!);
+                    return (
+                      <div
+                        key={r.id}
+                        className="flex items-center gap-3.5 rounded-[14px] border border-bad/25 bg-red-tint/40 px-[18px] py-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="font-head text-[14px] font-bold text-muted line-through">
+                            {r.name}
+                          </div>
+                          <div className="text-[12px] font-medium text-bad">
+                            {days === 0
+                              ? "Permanently deleted within a day"
+                              : `Permanently deleted in ${days} day${days === 1 ? "" : "s"}`}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => restoreTemplate(r.id)}
+                          className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-3.5 py-2 text-[12.5px] font-bold text-accent-ink"
+                        >
+                          <RotateCcw size={14} /> Restore
+                        </button>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Right — editor panel */}
@@ -560,6 +772,13 @@ export function ReportsManager() {
               defaultValue={selectedTemplate.name}
               onBlur={(e) => handleUpdateTemplateName(e.target.value)}
               className="my-1 w-full border-none bg-transparent font-head text-[20px] font-bold tracking-[-0.01em] text-ink outline-none"
+            />
+            <input
+              key={`area-${selectedTemplate.id}`}
+              defaultValue={selectedTemplate.area ?? ""}
+              onBlur={(e) => handleUpdateTemplateArea(e.target.value)}
+              placeholder="Area (e.g. Engineering) — shown on the Roundup"
+              className="mb-1.5 w-full border-none bg-transparent text-[13px] font-medium text-muted outline-none placeholder:italic"
             />
             <div className="mb-[18px] flex flex-wrap items-center gap-2">
               <span className="text-[12px] text-muted">Assigned to</span>
@@ -740,13 +959,21 @@ export function ReportsManager() {
 
             <div className="mt-[18px] flex flex-wrap items-center gap-3 border-t border-line pt-4">
               <button
-                onClick={handleArchiveTemplate}
+                onClick={() => setArchived(selectedTemplate.id, true)}
+                className="flex items-center gap-2 rounded-full border border-line bg-surface px-[15px] py-[9px] text-[13px] font-semibold text-ink hover:border-accent"
+              >
+                <Archive size={15} /> Archive report
+              </button>
+              <button
+                onClick={() => setConfirmDelete(selectedTemplate)}
                 className="flex items-center gap-2 rounded-full border border-bad/30 bg-surface px-[15px] py-[9px] text-[13px] font-semibold text-bad hover:bg-red-tint"
               >
-                <Trash2 size={15} /> Archive report
+                <Trash2 size={15} /> Delete report
               </button>
               <span className="min-w-[180px] flex-1 text-[12px] leading-[1.4] text-muted">
-                Archiving stops the report being assigned for future weeks. Nothing is deleted — every past submission stays on record.
+                Archiving stops the report being assigned for future weeks and
+                keeps every past submission — you can unarchive any time.
+                Deleting erases the report and its data after {PURGE_DAYS} days.
               </span>
             </div>
           </div>

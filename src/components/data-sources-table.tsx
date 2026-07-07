@@ -114,7 +114,10 @@ export function DataSourcesTable() {
       const res = await fetch("/api/templates");
       if (res.ok) {
         const data = await res.json();
-        const mapped: Row[] = data.templates.map(
+        const active = data.templates.filter(
+          (t: { archivedAt: string | null }) => !t.archivedAt,
+        );
+        const mapped: Row[] = active.map(
           (t: { id: number; name: string; dataSourceUrl: string | null }) => ({
             templateId: t.id,
             report: t.name,

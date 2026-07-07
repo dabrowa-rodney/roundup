@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   organisations,
@@ -138,11 +138,31 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // 3) Purge templates soft-deleted more than 7 days ago — permanent. The
+  //    template's instances go first (answers cascade off instances); the
+  //    template delete then cascades questions and assignee rows.
+  const PURGE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+  const cutoff = new Date(now.getTime() - PURGE_AFTER_MS);
+  const purgeable = await db
+    .select({ id: reportTemplates.id })
+    .from(reportTemplates)
+    .where(
+      and(
+        inArray(reportTemplates.orgId, orgIds),
+        lt(reportTemplates.deletedAt, cutoff),
+      ),
+    );
+  for (const t of purgeable) {
+    await db.delete(reportInstances).where(eq(reportInstances.templateId, t.id));
+    await db.delete(reportTemplates).where(eq(reportTemplates.id, t.id));
+  }
+
   return NextResponse.json({
     ok: true,
     week: weekIso,
     orgs: orgIds.length,
     locked,
     created,
+    purged: purgeable.length,
   });
 }
