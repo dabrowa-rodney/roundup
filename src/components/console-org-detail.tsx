@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { relativeTime } from "@/lib/dates";
 import { slugProblem } from "@/lib/org";
+import { ConfirmDialog } from "./confirm-dialog";
 
 interface OrgProp {
   id: number;
@@ -122,6 +123,7 @@ export function ConsoleOrgDetail({
   );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState(false);
 
   const patch = async (body: Record<string, unknown>, okText: string) => {
     setBusy(true);
@@ -243,10 +245,7 @@ export function ConsoleOrgDetail({
               </span>
               {org.hasAnthropicKey && (
                 <button
-                  onClick={() => {
-                    if (confirm("Remove this organisation's Anthropic key? Their Roundups fall back to the rule-based compiler until they add a new one."))
-                      patch({ clearAnthropicKey: true }, "AI key removed");
-                  }}
+                  onClick={() => setConfirmRemoveKey(true)}
                   disabled={busy}
                   className="rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold text-muted hover:text-bad disabled:opacity-40"
                 >
@@ -499,6 +498,21 @@ export function ConsoleOrgDetail({
           </Card>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmRemoveKey}
+        title="Remove this organisation's Anthropic key?"
+        body={
+          <>
+            AI Roundups keep working on paid plans via Roundup&apos;s own
+            Anthropic account; this org just stops being billed directly for
+            usage. On the Free plan they fall back to the rule-based compiler.
+          </>
+        }
+        confirmLabel="Remove key"
+        onConfirm={() => patch({ clearAnthropicKey: true }, "AI key removed")}
+        onClose={() => setConfirmRemoveKey(false)}
+      />
     </div>
   );
 }

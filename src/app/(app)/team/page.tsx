@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Screen } from "@/components/screen";
 import { Avatar, RoleBadge } from "@/components/ui";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { relativeTime } from "@/lib/dates";
 
 const COLS = "min-w-[820px] grid-cols-[2fr_1fr_1.2fr_1.5fr_80px]";
@@ -208,6 +209,7 @@ function EditUserModal({
   const [role, setRole] = useState(user.role);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const handleSave = async () => {
     setLoading(true);
@@ -233,7 +235,6 @@ function EditUserModal({
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Remove ${user.name || user.email} from the team?`)) return;
     setLoading(true);
     try {
       const res = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
@@ -284,7 +285,7 @@ function EditUserModal({
           )}
           <div className="flex items-center justify-between pt-2">
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmRemove(true)}
               disabled={loading}
               className="text-sm font-medium text-bad hover:underline disabled:opacity-40"
             >
@@ -308,6 +309,20 @@ function EditUserModal({
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmRemove}
+        title="Remove from team?"
+        body={
+          <>
+            <strong className="text-ink">{user.name || user.email}</strong>{" "}
+            will lose access to this workspace. Any reports assigned to them
+            stay, but you&apos;ll need to reassign them.
+          </>
+        }
+        confirmLabel="Remove from team"
+        onConfirm={handleDelete}
+        onClose={() => setConfirmRemove(false)}
+      />
     </div>
   );
 }

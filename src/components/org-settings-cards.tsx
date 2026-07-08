@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Check, KeyRound, Sparkles } from "lucide-react";
 import { slugProblem } from "@/lib/org";
+import { ConfirmDialog } from "./confirm-dialog";
 
 interface OrgInfo {
   name: string;
@@ -28,6 +29,7 @@ export function OrgSettingsCards() {
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState("");
+  const [confirmRemoveKey, setConfirmRemoveKey] = useState(false);
 
   useEffect(() => {
     fetch("/api/org")
@@ -211,7 +213,7 @@ export function OrgSettingsCards() {
               billed to your account
             </span>
             <button
-              onClick={() => saveKey(null)}
+              onClick={() => setConfirmRemoveKey(true)}
               disabled={keyBusy}
               className="rounded-full border border-line px-3.5 py-2 text-[13px] font-semibold text-muted disabled:opacity-40"
             >
@@ -262,6 +264,21 @@ export function OrgSettingsCards() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmRemoveKey}
+        title="Remove your Anthropic key?"
+        body={
+          <>
+            AI Roundups will keep working on paid plans using Roundup&apos;s own
+            Anthropic account — you just won&apos;t be billed directly for usage
+            anymore. You can reconnect a key at any time.
+          </>
+        }
+        confirmLabel="Remove key"
+        onConfirm={() => saveKey(null)}
+        onClose={() => setConfirmRemoveKey(false)}
+      />
     </>
   );
 }

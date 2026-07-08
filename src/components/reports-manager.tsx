@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { SectionLabel } from "./ui";
+import { ConfirmDialog } from "./confirm-dialog";
 import { initials, avatarColor } from "@/lib/avatar";
 import { parseConfig } from "@/lib/questions";
 
@@ -421,6 +422,8 @@ export function ReportsManager() {
   const [showAssign, setShowAssign] = useState(false);
   const [savingAssignees, setSavingAssignees] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Template | null>(null);
+  const [confirmRemoveQuestion, setConfirmRemoveQuestion] =
+    useState<Question | null>(null);
   // Drag-to-reorder: rows are only draggable while the grip is held (armed),
   // and the list live-reorders as the dragged row passes over its siblings.
   const [armedId, setArmedId] = useState<number | null>(null);
@@ -656,6 +659,25 @@ export function ReportsManager() {
           onSaved={() => fetchQuestions(selected)}
         />
       )}
+      <ConfirmDialog
+        open={confirmRemoveQuestion !== null}
+        title="Remove this question?"
+        body={
+          <>
+            <strong className="text-ink">
+              “{confirmRemoveQuestion?.text}”
+            </strong>{" "}
+            will be removed from this report going forward. Past answers to it
+            are kept and stay on previous submissions.
+          </>
+        }
+        confirmLabel="Remove question"
+        onConfirm={async () => {
+          if (confirmRemoveQuestion)
+            await handleArchiveQuestion(confirmRemoveQuestion.id);
+        }}
+        onClose={() => setConfirmRemoveQuestion(null)}
+      />
 
       <div className="grid grid-cols-1 items-start gap-[22px] lg:grid-cols-[1.3fr_1fr]">
         {/* Left — template list */}
@@ -972,7 +994,7 @@ export function ReportsManager() {
                     <Pencil size={14} />
                   </button>
                   <button
-                    onClick={() => handleArchiveQuestion(q.id)}
+                    onClick={() => setConfirmRemoveQuestion(q)}
                     aria-label="Remove question"
                     title="Remove question — past answers are kept"
                     className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted hover:bg-red-tint hover:text-bad"
