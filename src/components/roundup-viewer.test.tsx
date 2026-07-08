@@ -51,8 +51,8 @@ describe("RoundupViewer charts", () => {
     // directly in the chart/by-team grid.
     expect(html).toContain("MRR trend");
     expect(html).toContain("<polyline");
-    expect(html).toContain("£407,399"); // latest value, unit + compact format
-    expect(html).toContain("Nov 2025"); // first x label
+    expect(html).toContain("latest £407,399"); // aria-label carries the value
+    expect(html).toContain("£407,399"); // latest value, unit + compact format // first x label
     expect(html).toContain("Growth accelerating into the new year.");
     // No NaN coordinates anywhere in the SVG.
     expect(html).not.toContain("NaN");

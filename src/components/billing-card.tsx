@@ -62,7 +62,7 @@ export function BillingCard() {
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) {
-        window.location.href = d.url;
+        window.location.assign(d.url);
         return;
       }
       setError(d.error || "Something went wrong — try again.");

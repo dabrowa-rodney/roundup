@@ -102,6 +102,7 @@ export function ConsoleOrgDetail({
   roundups: RoundupProp[];
 }) {
   const router = useRouter();
+  const [renderedAt] = useState(() => Date.now());
   const [name, setName] = useState(org.name);
   const [slug, setSlug] = useState(org.slug);
   const [sched, setSched] = useState<SettingsProp>(
@@ -179,7 +180,7 @@ export function ConsoleOrgDetail({
           {org.planStatus ? ` · ${org.planStatus}` : ""}
           {org.plan === "free" &&
           org.trialEndsAt &&
-          new Date(org.trialEndsAt).getTime() > Date.now()
+          new Date(org.trialEndsAt).getTime() > renderedAt
             ? " · trialing"
             : ""}
         </span>
