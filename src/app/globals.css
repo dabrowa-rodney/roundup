@@ -55,29 +55,31 @@
   Values are taken from the canonical Wonde design-system source (tokens.css).
 */
 :root {
-  --bg: #eff1f7; /* gray-100 — page background */
+  /* Dashboard-restyle palette (design handoff, 2026-07-08) */
+  --bg: #f4f6fb; /* app canvas */
   --surface: #ffffff;
-  --ink: #161925; /* blue-950 — body text */
-  --heading: #27325e; /* blazer navy — headings */
-  --muted: #56688a; /* gray-600 */
-  --line: #c0cad8; /* gray-200 — borders */
+  --ink: #27325e; /* blazer navy — primary text AND headings */
+  --heading: #27325e;
+  --muted: #6b7390; /* secondary text */
+  --line: #edeff6; /* card borders / hairlines */
 
-  --accent: #4368fa; /* blue-500 — primary */
-  --accent-hover: #4160db; /* blue-600 */
+  --accent: #4368fa; /* primary */
+  --accent-hover: #3353e0;
   --accent-ink: #ffffff;
-  --accent-soft: #eff3ff; /* blue-50 — tinted panels */
+  --accent-soft: #eaeefe; /* active nav bg, icon chips */
 
-  /* Status — solid (dots/labels) + soft badge tints + dark badge ink */
-  --good: #47ab7e; /* success-600 */
-  --good-soft: #def7ec; /* success-100 */
-  --good-ink: #1c5a3e; /* success-800 */
-  --warn: #f5b02b; /* warning-400 */
-  --warn-soft: #fff1c8; /* warning-100 */
-  --warn-ink: #a83e09; /* warning-700 */
-  --bad: #e11d48; /* danger-600 */
-  --bad-soft: #ffe4e6; /* danger-100 */
-  --bad-ink: #be123c; /* danger-700 */
-  --red-tint: #ffe4e6; /* soft red surface */
+  /* Status — solid (dots/labels) + soft tints + on-tint text */
+  --good: #2f9e63;
+  --good-soft: #e7f5ee;
+  --good-ink: #2f9e63;
+  --warn: #e39a2e;
+  --warn-soft: #fbf2e3;
+  --warn-ink: #e39a2e;
+  --bad: #c4502f; /* rust */
+  --bad-soft: #fdf1ee;
+  --bad-ink: #7a3a26; /* dark text on the bad tint */
+  --bad-line: #f5dad3; /* needs-attention strip border */
+  --red-tint: #fdf1ee;
 
   --radius: 16px; /* radius-2xl — cards */
 
@@ -107,6 +109,7 @@
   --color-bad: var(--bad);
   --color-bad-soft: var(--bad-soft);
   --color-bad-ink: var(--bad-ink);
+  --color-bad-line: var(--bad-line);
   --color-red-tint: var(--red-tint);
 
   --radius-card: var(--radius);

@@ -10,10 +10,19 @@ export function Screen({
   subtitle,
   children,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  // No title → content-first screen (e.g. the Roundup viewer, whose header
+  // lives in the content per the dashboard design).
+  if (!title) {
+    return (
+      <div className="fade-up px-5 pb-20 pt-7 sm:px-8">
+        <div className="mx-auto w-full max-w-[1080px]">{children}</div>
+      </div>
+    );
+  }
   return (
     <>
       <div className="sticky top-0 z-10 border-b border-line bg-bg/80 px-5 py-4 backdrop-blur-md sm:px-9">

@@ -8,7 +8,7 @@ import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { RoundupViewer } from "@/components/roundup-viewer";
 import { GenerateRoundupButton } from "@/components/roundup-generate";
-import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
+import { mondayISO } from "@/lib/dates";
 import type { FullJson, SkimJson } from "@/lib/roundup";
 
 export default async function RoundupViewerPage({
@@ -53,7 +53,7 @@ export default async function RoundupViewerPage({
       )[0]?.count ?? 0);
 
   return (
-    <Screen title="Roundup" subtitle={weekLabel(parseISODate(weekIso))}>
+    <Screen>
       {roundup?.skimJson && roundup?.fullJson ? (
         <RoundupViewer
           skim={roundup.skimJson as SkimJson}

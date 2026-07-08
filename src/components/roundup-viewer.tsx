@@ -5,13 +5,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowLeft, Check, RefreshCw, Send } from "lucide-react";
 import { Segmented } from "./segmented";
-import { SectionLabel } from "./ui";
 import type {
   ChartItem,
   FullJson,
   MetricItem,
   Rag,
-  Severity,
   SkimJson,
 } from "@/lib/roundup";
 
@@ -32,37 +30,39 @@ function ragColor(rag: Rag | null): string {
   return rag ? RAG_COLOR[rag] : "var(--muted)";
 }
 
-function sevClass(sev: Severity): string {
-  return sev === "High"
-    ? "bg-bad-soft text-bad-ink"
-    : sev === "Medium"
-      ? "bg-warn-soft text-warn-ink"
-      : "bg-line/50 text-muted";
+function deltaParts(m: MetricItem): { text: string; good: boolean } | null {
+  if (!m.delta) return null;
+  // Compiler emits "\u2191 \u00a3123" / "\u2193 0.4" — present as "+\u00a3123 wk" / "\u22120.4 wk".
+  const text = m.delta.replace(/^\u2191\s*/, "+").replace(/^\u2193\s*/, "\u2212") + " wk";
+  return { text, good: m.good };
 }
 
 function MetricCard({ m, compact = false }: { m: MetricItem; compact?: boolean }) {
+  const delta = deltaParts(m);
   return (
     <div
-      className={`rounded-xl border border-line ${
-        compact ? "px-4 py-3.5" : "bg-surface px-[18px] py-4"
+      className={`rounded-card border border-line bg-surface ${
+        compact ? "px-4 py-3.5" : "px-[18px] py-4"
       }`}
     >
-      <div className="text-[12.5px] text-muted">{m.label}</div>
-      <div
-        className={`mt-1.5 font-head font-bold tracking-[-0.02em] ${
-          compact ? "text-[20px]" : "text-[23px]"
-        }`}
-      >
-        {m.value}
-      </div>
-      {m.delta && (
-        <div
-          className="mt-1 text-[12.5px] font-bold"
-          style={{ color: m.good ? "var(--good)" : "var(--bad)" }}
+      <div className="text-[12px] font-medium text-muted">{m.label}</div>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-2">
+        <span
+          className={`font-head font-bold tracking-[-0.02em] ${
+            compact ? "text-[20px]" : "text-[24px]"
+          }`}
         >
-          {m.delta}
-        </div>
-      )}
+          {m.value}
+        </span>
+        {delta && (
+          <span
+            className="text-[12px] font-semibold"
+            style={{ color: delta.good ? "var(--good)" : "var(--bad)" }}
+          >
+            {delta.text}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -73,28 +73,27 @@ function fmtVal(unit: string, n: number): string {
   })}`;
 }
 
-/** Lightweight SVG line/bar chart for AI-selected sheet series. */
+/** Minimal SVG chart per the dashboard restyle: accent line + 7% area fill,
+ *  endpoint dot, a single baseline hairline — no gridlines, no axis labels. */
 function ChartCard({ c }: { c: ChartItem }) {
   const W = 560;
-  const H = 150;
+  const H = 170;
   const padT = 10;
-  const padB = 24;
+  const padB = 10;
   const padX = 4;
   const innerW = W - padX * 2;
   const innerH = H - padT - padB;
 
   const ys = c.points.map((p) => p.y);
   const max = Math.max(...ys);
-  // Lines read best zoomed to the data; bars need a zero baseline.
   const min = c.type === "bar" ? Math.min(0, ...ys) : Math.min(...ys);
   const span = max - min || 1;
   const n = c.points.length;
   const px = (i: number) =>
     padX + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
   const py = (v: number) => padT + innerH - ((v - min) / span) * innerH;
-
-  const first = c.points[0];
   const last = c.points[n - 1];
+
   const linePts = c.points.map((p, i) => `${px(i)},${py(p.y)}`).join(" ");
   const areaPath =
     `M ${px(0)} ${padT + innerH} ` +
@@ -103,25 +102,27 @@ function ChartCard({ c }: { c: ChartItem }) {
   const barW = (innerW / n) * 0.62;
 
   return (
-    <div className="rounded-xl border border-line bg-surface px-[18px] pb-3.5 pt-4">
+    <div className="rounded-card border border-line bg-surface px-[18px] pb-3.5 pt-4">
       <div className="flex items-baseline justify-between gap-3">
-        <div className="text-[13.5px] font-semibold">{c.title}</div>
-        <div className="whitespace-nowrap font-head text-[15px] font-bold">
-          {fmtVal(c.unit, last.y)}
+        <div className="text-[13px] font-semibold">
+          {c.title}
+          {c.unit ? ` (${c.unit})` : ""}
+        </div>
+        <div className="whitespace-nowrap text-[11.5px] text-muted">
+          last {c.points.length} periods
         </div>
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="mt-2 block w-full"
+        className="mt-2.5 block w-full"
         role="img"
-        aria-label={`${c.title}: ${c.points.length} points from ${fmtVal(c.unit, first.y)} to ${fmtVal(c.unit, last.y)}`}
+        aria-label={`${c.title}: ${c.points.length} points, latest ${fmtVal(c.unit, last.y)}`}
       >
-        {/* top (max) and bottom (min) guides */}
-        <line x1={padX} y1={py(max)} x2={W - padX} y2={py(max)} stroke="var(--line)" strokeDasharray="3 4" />
-        <line x1={padX} y1={py(min)} x2={W - padX} y2={py(min)} stroke="var(--line)" />
+        {/* single baseline hairline */}
+        <line x1={padX} y1={padT + innerH} x2={W - padX} y2={padT + innerH} stroke="var(--line)" />
         {c.type === "line" ? (
           <>
-            <path d={areaPath} fill="var(--accent)" opacity="0.08" />
+            <path d={areaPath} fill="var(--accent)" opacity="0.07" />
             <polyline
               points={linePts}
               fill="none"
@@ -146,20 +147,9 @@ function ChartCard({ c }: { c: ChartItem }) {
             />
           ))
         )}
-        <text x={padX} y={py(max) - 4} fontSize="10.5" fill="var(--muted)">
-          {fmtVal(c.unit, max)}
-        </text>
-        <text x={padX} y={H - 6} fontSize="10.5" fill="var(--muted)">
-          {first.x}
-        </text>
-        <text x={W - padX} y={H - 6} fontSize="10.5" fill="var(--muted)" textAnchor="end">
-          {last.x}
-        </text>
       </svg>
       {c.note && (
-        <div className="mt-1.5 text-[12.5px] leading-[1.5] text-muted">
-          {c.note}
-        </div>
+        <div className="mt-1 text-[12px] leading-[1.5] text-muted">{c.note}</div>
       )}
     </div>
   );
@@ -290,18 +280,33 @@ export function RoundupViewer({
   const [mode, setMode] = useState<Mode>("skim");
 
   return (
-    <div className="mx-auto max-w-[880px]">
-      <div className="mb-[22px] flex flex-wrap items-center gap-3.5">
-        <Link
-          href="/roundups"
-          className="flex items-center gap-1.5 rounded-full border border-line px-3 py-[7px] text-[13px] font-semibold text-muted"
-        >
-          <ArrowLeft size={15} /> All roundups
-        </Link>
-        <div className="flex-1" />
-        <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
-        {week && !sent && <RegenerateButton week={week} />}
-        {week && <SendButton week={week} initialSent={sent} />}
+    <div className="mx-auto max-w-[980px]">
+      <Link
+        href="/roundups"
+        className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-accent"
+      >
+        <ArrowLeft size={13} /> All roundups
+      </Link>
+
+      {/* Header row: eyebrow + AI headline left, actions right */}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="min-w-[260px] max-w-[560px]">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
+            Weekly roundup · {skim.week} · {skim.range}
+          </div>
+          <h1 className="mt-1.5 font-head text-[24px] font-bold leading-[1.25] tracking-[-0.02em] text-ink">
+            {skim.headline}
+          </h1>
+          <div className="mt-2 text-[12px] text-muted">
+            {skim.reportsIn}
+            {skim.generated ? ` · ${skim.generated}` : ""}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
+          {week && !sent && <RegenerateButton week={week} />}
+          {week && <SendButton week={week} initialSent={sent} />}
+        </div>
       </div>
 
       {mode === "skim" ? <Skim skim={skim} /> : <Full full={full} />}
@@ -310,169 +315,141 @@ export function RoundupViewer({
 }
 
 function Skim({ skim }: { skim: SkimJson }) {
+  const charts = skim.charts ?? [];
+  const [heroChart, ...extraCharts] = charts;
   const showChanges = skim.changes.length > 0;
   const showHighlights = skim.highlights.length > 0;
 
   return (
     <div className="fade-up">
-      <div className="rounded-card border border-line bg-surface px-8 py-[30px]">
-        <div className="text-[12.5px] font-bold tracking-[0.05em] text-muted">
-          {skim.week.toUpperCase()} ROUNDUP · {skim.range.toUpperCase()}
+      {/* Metric cards */}
+      {skim.metrics.length > 0 && (
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3.5">
+          {skim.metrics.map((m, i) => (
+            <MetricCard key={i} m={m} />
+          ))}
         </div>
-        <div className="mt-2.5 font-head text-[25px] font-bold leading-[1.25] tracking-[-0.02em]">
-          {skim.headline}
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2.5 text-[12.5px] text-muted">
-          <span>{skim.reportsIn}</span>
-          {skim.generated && (
-            <>
-              <span className="text-line">·</span>
-              <span>{skim.generated}</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {skim.risks.length > 0 && (
-        <>
-          <div className="mb-[11px] mt-[26px] text-[12px] font-bold tracking-[0.06em] text-bad">
-            ⚑ NEEDS SENIOR ATTENTION
-          </div>
-          <div className="flex flex-col gap-2.5">
-            {skim.risks.map((r, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-3.5 rounded-xl border border-line border-l-[3px] border-l-bad bg-surface px-[18px] py-4"
-              >
-                <span
-                  className={`flex-shrink-0 whitespace-nowrap rounded-md px-[9px] py-[3px] text-[11px] font-semibold ${sevClass(
-                    r.sev,
-                  )}`}
-                >
-                  {r.sev}
-                </span>
-                <div className="flex-1">
-                  <div className="text-[14.5px] font-medium leading-[1.5]">
-                    {r.text}
-                  </div>
-                  <div className="mt-[5px] text-[12.5px] text-muted">
-                    {r.who}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
       )}
 
+      {/* Chart + by-team row */}
+      {(heroChart || skim.byTeam.length > 0) && (
+        <div
+          className={`mt-3.5 grid gap-3.5 ${
+            heroChart && skim.byTeam.length > 0
+              ? "grid-cols-1 lg:grid-cols-[3fr_2fr]"
+              : "grid-cols-1"
+          }`}
+        >
+          {heroChart && <ChartCard c={heroChart} />}
+          {skim.byTeam.length > 0 && (
+            <div className="rounded-card border border-line bg-surface px-[18px] pb-2.5 pt-4">
+              <div className="mb-2 text-[13px] font-semibold">By team</div>
+              {skim.byTeam.map((c, i) => (
+                <div key={i} className="flex items-center gap-2.5 py-[7px]">
+                  <span
+                    className="h-[9px] w-[9px] flex-shrink-0 rounded-full"
+                    style={{ background: ragColor(c.rag) }}
+                  />
+                  <span className="w-[92px] flex-shrink-0 truncate text-[12.5px] font-semibold text-ink">
+                    {c.area || c.name}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-muted">
+                    {c.line}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {extraCharts.length > 0 && (
+        <div className="mt-3.5 flex flex-col gap-3.5">
+          {extraCharts.map((c, i) => (
+            <ChartCard key={i} c={c} />
+          ))}
+        </div>
+      )}
+
+      {/* Needs attention */}
+      {skim.risks.length > 0 && (
+        <div className="mt-3.5 flex flex-col gap-2.5">
+          {skim.risks.map((r, i) => (
+            <div
+              key={i}
+              className="flex items-start gap-3 rounded-card border border-bad-line bg-bad-soft px-5 py-3.5"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--bad)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="mt-0.5 flex-shrink-0"
+                aria-hidden
+              >
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <path d="M12 9v4" />
+                <path d="M12 17h.01" />
+              </svg>
+              <div className="text-[13px] leading-[1.55] text-bad-ink">
+                <strong className="font-bold text-bad">Needs attention:</strong>{" "}
+                {r.text}
+                <span className="text-bad-ink/70"> — {r.who}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Highlights & changes */}
       {(showChanges || showHighlights) && (
         <div
-          className={`mt-[26px] grid gap-4 ${
-            showChanges && showHighlights ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
+          className={`mt-3.5 grid gap-3.5 ${
+            showChanges && showHighlights
+              ? "grid-cols-1 sm:grid-cols-2"
+              : "grid-cols-1"
           }`}
         >
           {showChanges && (
-            <div>
-              <SectionLabel className="mb-[11px]">What changed</SectionLabel>
-              <div className="overflow-hidden rounded-card border border-line bg-surface">
-                {skim.changes.map((c, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-[11px] px-4 py-3.5 ${
-                      i > 0 ? "border-t border-line" : ""
-                    }`}
+            <div className="rounded-card border border-line bg-surface px-[18px] pb-2.5 pt-4">
+              <div className="mb-2 text-[13px] font-semibold">What changed</div>
+              {skim.changes.map((c, i) => (
+                <div key={i} className="flex items-start gap-2.5 py-[7px]">
+                  <span
+                    className="mt-0.5 flex h-[20px] w-[20px] flex-shrink-0 items-center justify-center rounded-[6px] text-[12px] font-extrabold"
+                    style={{
+                      background:
+                        c.dir === "up" ? "var(--good-soft)" : "var(--red-tint)",
+                      color: c.dir === "up" ? "var(--good)" : "var(--bad)",
+                    }}
                   >
-                    <span
-                      className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[7px] text-[13px] font-extrabold"
-                      style={{
-                        background:
-                          c.dir === "up" ? "var(--good-soft)" : "var(--red-tint)",
-                        color: c.dir === "up" ? "var(--good-ink)" : "var(--bad)",
-                      }}
-                    >
-                      {c.dir === "up" ? "↑" : "↓"}
-                    </span>
-                    <span className="text-sm leading-[1.4]">{c.text}</span>
-                  </div>
-                ))}
-              </div>
+                    {c.dir === "up" ? "↑" : "↓"}
+                  </span>
+                  <span className="text-[12.5px] leading-[1.5]">{c.text}</span>
+                </div>
+              ))}
             </div>
           )}
           {showHighlights && (
-            <div>
-              <div className="mb-[11px] text-[12px] font-bold uppercase tracking-[0.06em] text-good">
+            <div className="rounded-card border border-line bg-surface px-[18px] pb-2.5 pt-4">
+              <div className="mb-2 text-[13px] font-semibold text-good">
                 ★ Highlights
               </div>
-              <div className="overflow-hidden rounded-card border border-line bg-surface">
-                {skim.highlights.map((w, i) => (
-                  <div
-                    key={i}
-                    className={`px-4 py-3.5 ${i > 0 ? "border-t border-line" : ""}`}
-                  >
-                    <div className="text-sm font-medium leading-[1.4]">
-                      {w.text}
-                    </div>
-                    <div className="mt-[3px] text-[12px] text-muted">
-                      {w.who}
-                    </div>
+              {skim.highlights.map((w, i) => (
+                <div key={i} className="py-[7px]">
+                  <div className="text-[12.5px] font-medium leading-[1.5]">
+                    {w.text}
                   </div>
-                ))}
-              </div>
+                  <div className="mt-[2px] text-[11.5px] text-muted">{w.who}</div>
+                </div>
+              ))}
             </div>
           )}
         </div>
-      )}
-
-      {skim.metrics.length > 0 && (
-        <>
-          <SectionLabel className="mb-[11px] mt-[26px]">
-            Key metrics
-          </SectionLabel>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
-            {skim.metrics.map((m, i) => (
-              <MetricCard key={i} m={m} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {(skim.charts?.length ?? 0) > 0 && (
-        <>
-          <SectionLabel className="mb-[11px] mt-[26px]">Trends</SectionLabel>
-          <div className="flex flex-col gap-3">
-            {skim.charts!.map((c, i) => (
-              <ChartCard key={i} c={c} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {skim.byTeam.length > 0 && (
-        <>
-          <SectionLabel className="mb-[11px] mt-[26px]">By team</SectionLabel>
-          <div className="overflow-hidden rounded-card border border-line bg-surface">
-            {skim.byTeam.map((c, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-3.5 px-[18px] py-3.5 ${
-                  i > 0 ? "border-t border-line" : ""
-                }`}
-              >
-                <span
-                  className="h-[9px] w-[9px] flex-shrink-0 rounded-full"
-                  style={{ background: ragColor(c.rag) }}
-                />
-                <div className="w-[150px] flex-shrink-0">
-                  <div className="text-[13.5px] font-semibold">{c.name}</div>
-                  <div className="text-[12px] text-muted">{c.area}</div>
-                </div>
-                <div className="flex-1 text-[13.5px] leading-[1.45]">
-                  {c.line}
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
       )}
     </div>
   );

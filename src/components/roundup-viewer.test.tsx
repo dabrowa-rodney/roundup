@@ -45,9 +45,10 @@ const FULL: FullJson = {
 };
 
 describe("RoundupViewer charts", () => {
-  it("renders a Trends section with an SVG line chart in skim mode", () => {
+  it("renders the chart card with an SVG line chart in skim mode", () => {
     const html = renderToStaticMarkup(<RoundupViewer skim={SKIM} full={FULL} />);
-    expect(html).toContain("Trends");
+    // The dashboard restyle drops the "Trends" label — the chart card sits
+    // directly in the chart/by-team grid.
     expect(html).toContain("MRR trend");
     expect(html).toContain("<polyline");
     expect(html).toContain("£407,399"); // latest value, unit + compact format

@@ -38,13 +38,13 @@ const THIS_WEEK: NavItem[] = [
 const ADMIN: NavItem[] = [
   { href: "/reports", label: "Reports", icon: FileText, match: ["/reports"] },
   { href: "/team", label: "Team", icon: Users, match: ["/team"] },
-  { href: "/roundups", label: "Roundups", icon: Table, match: ["/roundups"] },
   {
     href: "/data-sources",
     label: "Data sources",
     icon: Database,
     match: ["/data-sources"],
   },
+  { href: "/roundups", label: "Roundups", icon: Table, match: ["/roundups"] },
 ];
 
 const SETTINGS_ITEM: NavItem = {
@@ -70,13 +70,13 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      className={`mb-0.5 flex items-center gap-[11px] rounded-[11px] px-3 py-2.5 text-sm transition-colors hover:bg-accent-soft ${
+      className={`mb-0.5 flex items-center gap-2.5 rounded-[10px] px-3 py-[9px] text-[13.5px] transition-colors ${
         active
-          ? "bg-accent-soft font-bold text-accent"
-          : "font-semibold text-muted"
+          ? "bg-accent-soft font-semibold text-accent"
+          : "font-medium text-muted hover:text-accent"
       }`}
     >
-      <Icon size={17} strokeWidth={2} />
+      <Icon size={16} strokeWidth={2} />
       {item.label}
     </Link>
   );
@@ -86,8 +86,10 @@ function Brand() {
   return (
     <div className="flex items-center gap-2.5">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/roundup-icon.svg" alt="" className="h-8 w-8" />
-      <span className="text-[17px] font-bold tracking-[-0.01em]">Roundup</span>
+      <img src="/roundup-icon.svg" alt="" className="h-6 w-6" />
+      <span className="font-head text-[17px] font-bold tracking-[-0.01em]">
+        Roundup
+      </span>
     </div>
   );
 }
@@ -102,41 +104,21 @@ function SidebarContent() {
   const roleLabel = role ? (ROLE_LABEL[role] ?? "Member") : "Member";
   const isAdmin = role === "admin";
 
+  // Flat list per the dashboard-restyle handoff — no section headers.
+  const items = isAdmin ? [...THIS_WEEK, ...ADMIN, SETTINGS_ITEM] : [...THIS_WEEK, SETTINGS_ITEM];
+
   return (
     <>
-      <div className="px-3 py-1.5 text-[11px] font-bold tracking-[0.08em] text-muted">
-        THIS WEEK
-      </div>
-      {THIS_WEEK.map((item) => (
+      {items.map((item) => (
         <NavLink key={item.href} item={item} active={isActive(pathname, item)} />
       ))}
 
-      {isAdmin && (
-        <>
-          <div className="flex items-center gap-[7px] px-3 pb-1.5 pt-[18px] text-[11px] font-bold tracking-[0.08em] text-muted">
-            ADMIN
-            <span className="rounded-md bg-accent-soft px-[7px] py-0.5 text-[10px] font-semibold tracking-normal text-accent">
-              You can manage
-            </span>
-          </div>
-          {ADMIN.map((item) => (
-            <NavLink
-              key={item.href}
-              item={item}
-              active={isActive(pathname, item)}
-            />
-          ))}
-        </>
-      )}
-
       <div className="flex-1" />
 
-      <NavLink item={SETTINGS_ITEM} active={isActive(pathname, SETTINGS_ITEM)} />
-
-      <div className="mt-3 flex items-center gap-2.5 border-t border-line px-2.5 pb-1 pt-3">
-        <Avatar name={name} size={32} />
+      <div className="mt-3 flex items-center gap-2.5 border-t border-line px-2 pb-1 pt-3.5">
+        <Avatar name={name} size={28} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold">{name}</div>
+          <div className="truncate text-[12.5px] font-medium text-ink">{name}</div>
           <div className="text-[11px] text-muted">{roleLabel}</div>
         </div>
         {session && (
@@ -164,8 +146,8 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden h-full w-[248px] flex-shrink-0 flex-col border-r border-line bg-surface px-4 py-[22px] lg:flex">
-        <div className="px-2 pb-[22px] pt-1">
+      <aside className="hidden h-full w-[216px] flex-shrink-0 flex-col border-r border-line bg-surface px-3 py-5 lg:flex">
+        <div className="px-2 pb-5 pt-0.5">
           <Brand />
         </div>
         <SidebarContent />
