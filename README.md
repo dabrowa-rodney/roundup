@@ -14,9 +14,8 @@ leadership by email.
 1. Monday — the week opens; contributors get fresh report forms
 2. Thu/Fri — automatic email reminders nudge anyone who hasn't submitted
 3. Sunday 20:00 (configurable) — the week locks
-4. An admin generates the Roundup (AI-written if the org has connected an
-   Anthropic key, rule-compiled otherwise), reviews the draft, and hits
-   **Send to recipients**
+4. An admin generates the Roundup (AI-written on paid plans, rule-compiled
+   on Free), reviews the draft, and hits **Send to recipients**
 
 ## Who uses it
 
@@ -60,7 +59,8 @@ grants, and discount-code management.
   and **Full report** (exec summary, numbered risks, data appendix). A
   **Send to recipients** button distributes it by email.
 - **Settings** — account; organisation (name, workspace URL); **AI
-  generation** (bring-your-own Anthropic API key, stored encrypted); **Plan &
+  generation** (included on paid plans via the platform's Anthropic account;
+  optional BYO key override, stored encrypted); **Plan &
   billing** (tier cards, Stripe checkout, customer portal); weekly schedule
   (close/reopen day+time, London tz); reminder slots; roundup-ready
   notification toggle.
@@ -81,8 +81,9 @@ Hybrid pipeline — **code owns the facts, AI writes the prose**:
 - The deterministic compiler (`src/lib/roundup.ts`) computes everything
   countable: metrics from sheets + number answers, per-team RAG dots, report
   counts.
-- If the org's plan includes AI **and** they've connected their own Anthropic
-  API key (Settings → AI generation), Claude writes the narrative
+- If the org's plan includes AI, Claude writes the narrative using the
+  platform `ANTHROPIC_API_KEY` (or the org's own key if they've connected one
+  in Settings → AI generation)
   (`src/lib/roundup-ai.ts`): headline, exec summary, risk/highlight phrasing,
   per-team one-liners, week-over-week changes, and it picks up to 3 charts
   from the sheet series — chart data points are copied verbatim from the
@@ -133,7 +134,8 @@ tokens and guidance). In-repo: all tokens live as CSS custom properties in
 - **Resend** for all email (domain `notifications.roundup.work`)
 - **Stripe** for subscriptions (`scripts/stripe-setup.mjs` bootstraps
   products/prices/webhook)
-- **Anthropic API** (per-org keys, AES-256-GCM at rest) for AI generation
+- **Anthropic API** for AI generation (platform key; optional per-org
+  override keys, AES-256-GCM at rest)
 - **Vercel** — deploy on push to `master`; Vercel DNS hosts `roundup.work`
   (wildcard `*.roundup.work` ready for per-org subdomains); two daily crons:
   lifecycle (lock/open weeks, purge deleted templates) and reminders
@@ -148,7 +150,8 @@ tokens and guidance). In-repo: all tokens live as CSS custom properties in
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
 | `NEXTAUTH_SECRET` / `NEXTAUTH_URL` | Sessions + canonical URL |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Email sending |
-| `ENCRYPTION_SECRET` | AES key for org secrets (Anthropic keys) |
+| `ENCRYPTION_SECRET` | AES key for org secrets (BYO Anthropic keys) |
+| `ANTHROPIC_API_KEY` | Platform key powering AI Roundups on paid plans |
 | `SUPER_ADMIN_EMAILS` | Comma-separated owner-console access |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Billing |
 | `CRON_SECRET` | Authorises Vercel cron calls |

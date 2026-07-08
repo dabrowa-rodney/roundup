@@ -23,7 +23,7 @@ const TIERS = [
     annual: "£290/yr",
     monthlyKey: "team_monthly",
     annualKey: "team_annual",
-    features: ["Up to 25 members", "Unlimited report templates", "AI Roundups (your Anthropic key)"],
+    features: ["Up to 25 members", "Unlimited report templates", "AI-written Roundups included"],
   },
   {
     key: "business" as const,

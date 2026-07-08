@@ -193,9 +193,9 @@ export async function POST(req: NextRequest) {
     };
   });
 
-  // The org's own Anthropic key (BYO): no key → deterministic compile.
-  // AI is also a plan feature — Free-tier orgs compile deterministically
-  // even with a key connected.
+  // AI is a paid-plan feature, powered by the platform's Anthropic account.
+  // An org's own key (BYO) acts as an override — usage billed to them
+  // instead. Free-tier orgs compile deterministically either way.
   const plan = await getOrgPlan(me.orgId);
   const org = (
     await db
@@ -204,7 +204,9 @@ export async function POST(req: NextRequest) {
       .where(eq(organisations.id, me.orgId))
       .limit(1)
   )[0];
-  const aiKey = plan.limits.ai ? decryptSecret(org?.keyEnc) : null;
+  const aiKey = plan.limits.ai
+    ? (decryptSecret(org?.keyEnc) ?? process.env.ANTHROPIC_API_KEY ?? null)
+    : null;
 
   const now = new Date();
   const content = await generateRoundupAI(

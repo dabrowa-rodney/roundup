@@ -196,16 +196,19 @@ export function OrgSettingsCards() {
           </span>
         </div>
         <p className="mt-1.5 text-[13.5px] leading-[1.55] text-muted">
-          With an Anthropic API key connected, Roundups are written by Claude —
-          a natural headline and summary, week-over-week changes, and charts
-          picked from your connected sheets. Usage is billed to your key.
-          Without one, Roundups still generate from a rule-based compiler.
+          On the Team and Business plans, Roundups are written by Claude — a
+          natural headline and summary, week-over-week changes, and charts
+          picked from your connected sheets. It&apos;s included in the plan;
+          there&apos;s nothing to set up. Optionally, connect your own
+          Anthropic API key below to have AI usage billed to your account
+          instead.
         </p>
 
         {org.hasAnthropicKey ? (
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-2 rounded-full bg-good-soft px-3.5 py-2 text-[13px] font-semibold text-good-ink">
-              <Sparkles size={14} /> Anthropic key connected — AI Roundups on
+              <Sparkles size={14} /> Your own Anthropic key connected — usage
+              billed to your account
             </span>
             <button
               onClick={() => saveKey(null)}
@@ -251,8 +254,8 @@ export function OrgSettingsCards() {
                 <span className="font-medium text-bad">{keyError}</span>
               ) : (
                 <span className="text-muted">
-                  Create one at console.anthropic.com — it&apos;s stored
-                  encrypted and never shown again.
+                  Optional — create one at console.anthropic.com. It&apos;s
+                  stored encrypted and never shown again.
                 </span>
               )}
             </div>
