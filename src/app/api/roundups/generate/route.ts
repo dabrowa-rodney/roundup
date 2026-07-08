@@ -25,6 +25,7 @@ import {
   type SkimJson,
 } from "@/lib/roundup";
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
+import { isSkipped } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
@@ -111,6 +112,8 @@ export async function POST(req: NextRequest) {
       .where(inArray(answers.instanceId, instIds));
 
     for (const r of rows) {
+      // Deliberately skipped questions stay out of the Roundup entirely.
+      if (isSkipped(r.value)) continue;
       const cfg =
         r.qConfig && typeof r.qConfig === "object"
           ? (r.qConfig as { unit?: string })

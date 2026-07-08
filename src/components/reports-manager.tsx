@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   GripVertical,
+  Pencil,
   Plus,
   RotateCcw,
   Trash2,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { SectionLabel } from "./ui";
 import { initials, avatarColor } from "@/lib/avatar";
+import { parseConfig } from "@/lib/questions";
 
 interface TemplateAssignee {
   id: number;
@@ -150,26 +152,30 @@ function NewTemplateModal({
   );
 }
 
-function AddQuestionModal({
-  open,
+// Add a new question, or — when `question` is set — edit an existing one.
+// Render with a key per question so state re-initialises between opens.
+function QuestionModal({
   templateId,
+  question,
   onClose,
-  onAdded,
+  onSaved,
 }: {
-  open: boolean;
   templateId: number;
+  question: Question | null;
   onClose: () => void;
-  onAdded: () => void;
+  onSaved: () => void;
 }) {
-  const [text, setText] = useState("");
-  const [type, setType] = useState("long_text");
-  const [helper, setHelper] = useState("");
-  const [optionsText, setOptionsText] = useState("");
-  const [unit, setUnit] = useState("");
+  const initial = parseConfig(question?.config);
+  const [text, setText] = useState(question?.text ?? "");
+  const [type, setType] = useState(question?.type ?? "long_text");
+  const [helper, setHelper] = useState(initial.helper ?? "");
+  const [optionsText, setOptionsText] = useState(
+    (initial.options ?? []).join("\n"),
+  );
+  const [unit, setUnit] = useState(initial.unit ?? "");
+  const [skippable, setSkippable] = useState(initial.skippable ?? false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  if (!open) return null;
 
   const isChoice = type === "single_choice" || type === "multi_choice";
   const isNumber = type === "number";
@@ -180,6 +186,7 @@ function AddQuestionModal({
     setHelper("");
     setOptionsText("");
     setUnit("");
+    setSkippable(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -199,31 +206,35 @@ function AddQuestionModal({
     if (helper.trim()) config.helper = helper.trim();
     if (isChoice) config.options = options;
     if (isNumber && unit.trim()) config.unit = unit.trim();
+    if (skippable) config.skippable = true;
 
     setLoading(true);
     setError("");
     try {
+      const payload = {
+        text: text.trim(),
+        type,
+        config: Object.keys(config).length > 0 ? config : null,
+      };
       const res = await fetch(`/api/templates/${templateId}/questions`, {
-        method: "POST",
+        method: question ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: text.trim(),
-          type,
-          config: Object.keys(config).length > 0 ? config : null,
-        }),
+        body: JSON.stringify(
+          question ? { questionId: question.id, ...payload } : payload,
+        ),
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Failed to add question");
+        setError(data.error || "Failed to save question");
         setLoading(false);
         return;
       }
       reset();
       setLoading(false);
-      onAdded();
+      onSaved();
       onClose();
     } catch {
-      setError("Failed to add question");
+      setError("Failed to save question");
       setLoading(false);
     }
   };
@@ -231,7 +242,9 @@ function AddQuestionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-xl">
-        <h2 className="font-head text-lg font-bold mb-4">Add question</h2>
+        <h2 className="font-head text-lg font-bold mb-4">
+          {question ? "Edit question" : "Add question"}
+        </h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-muted mb-1">Question text *</label>
@@ -297,11 +310,32 @@ function AddQuestionModal({
               placeholder="A short hint shown under the question"
             />
           </div>
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={skippable}
+              onChange={(e) => setSkippable(e.target.checked)}
+              className="mt-[3px] h-4 w-4 accent-[var(--accent)]"
+            />
+            <span>
+              <span className="block text-sm font-medium text-ink">
+                Contributors can skip this question
+              </span>
+              <span className="block text-[12.5px] text-muted">
+                Adds a &ldquo;Skip this week&rdquo; option on their report;
+                skipped questions stay out of the Roundup.
+              </span>
+            </span>
+          </label>
           {error && <p className="text-sm text-bad">{error}</p>}
           <div className="flex gap-3 justify-end pt-2">
             <button type="button" onClick={onClose} className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas">Cancel</button>
             <button type="submit" disabled={loading || !text.trim()} className="rounded-full bg-accent px-4 py-2 text-sm font-bold text-accent-ink disabled:opacity-40">
-              {loading ? "Adding..." : "Add question"}
+              {loading
+                ? "Saving..."
+                : question
+                  ? "Save changes"
+                  : "Add question"}
             </button>
           </div>
         </form>
@@ -383,6 +417,7 @@ export function ReportsManager() {
   const [loading, setLoading] = useState(true);
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [showAssign, setShowAssign] = useState(false);
   const [savingAssignees, setSavingAssignees] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Template | null>(null);
@@ -609,12 +644,16 @@ export function ReportsManager() {
           if (confirmDelete) await deleteTemplate(confirmDelete.id);
         }}
       />
-      {selected !== null && (
-        <AddQuestionModal
-          open={showAddQuestion}
+      {selected !== null && (showAddQuestion || editingQuestion) && (
+        <QuestionModal
+          key={editingQuestion?.id ?? "new"}
           templateId={selected}
-          onClose={() => setShowAddQuestion(false)}
-          onAdded={() => fetchQuestions(selected)}
+          question={editingQuestion}
+          onClose={() => {
+            setShowAddQuestion(false);
+            setEditingQuestion(null);
+          }}
+          onSaved={() => fetchQuestions(selected)}
         />
       )}
 
@@ -916,9 +955,22 @@ export function ReportsManager() {
                     </button>
                   </span>
                   <span className="flex-1 truncate text-[13.5px]">{q.text}</span>
+                  {parseConfig(q.config).skippable && (
+                    <span className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted">
+                      Skippable
+                    </span>
+                  )}
                   <span className="whitespace-nowrap rounded-[7px] bg-accent-soft px-[9px] py-[3px] text-[11px] font-semibold text-accent">
                     {TYPE_LABELS[q.type] || q.type}
                   </span>
+                  <button
+                    onClick={() => setEditingQuestion(q)}
+                    aria-label="Edit question"
+                    title="Edit question — text, type and settings"
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted hover:bg-accent-soft hover:text-accent"
+                  >
+                    <Pencil size={14} />
+                  </button>
                   <button
                     onClick={() => handleArchiveQuestion(q.id)}
                     aria-label="Remove question"

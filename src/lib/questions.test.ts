@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatAnswer, isAnswered, parseConfig } from "./questions";
+import {
+  formatAnswer,
+  isAnswered,
+  isSkipped,
+  parseConfig,
+  SKIPPED_VALUE,
+} from "./questions";
 
 describe("formatAnswer", () => {
   it("labels RAG values", () => {
@@ -57,5 +63,26 @@ describe("isAnswered", () => {
     expect(isAnswered("multi_choice", ["a"])).toBe(true);
     expect(isAnswered("file_link", { link: "x" })).toBe(true);
     expect(isAnswered("number", 0)).toBe(true);
+  });
+  it("treats a deliberate skip as answered", () => {
+    expect(isAnswered("long_text", SKIPPED_VALUE)).toBe(true);
+  });
+});
+
+describe("skipped answers", () => {
+  it("recognises only the sentinel shape", () => {
+    expect(isSkipped(SKIPPED_VALUE)).toBe(true);
+    expect(isSkipped({ skipped: true })).toBe(true);
+    expect(isSkipped({ skipped: false })).toBe(false);
+    expect(isSkipped("skipped")).toBe(false);
+    expect(isSkipped(null)).toBe(false);
+    expect(isSkipped(["skipped"])).toBe(false);
+  });
+  it("formats as Skipped regardless of type", () => {
+    expect(formatAnswer("long_text", SKIPPED_VALUE)).toBe("Skipped");
+    expect(formatAnswer("rag", SKIPPED_VALUE)).toBe("Skipped");
+    expect(formatAnswer("number", SKIPPED_VALUE, { unit: "x" })).toBe(
+      "Skipped",
+    );
   });
 });

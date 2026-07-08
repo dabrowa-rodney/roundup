@@ -13,6 +13,21 @@ export interface QuestionConfig {
   helper?: string;
   options?: string[]; // single_choice / multi_choice
   unit?: string; // number
+  skippable?: boolean; // contributor may skip this question
+}
+
+// Sentinel answer value for a deliberately skipped question. Kept as a
+// distinct shape so it can never collide with a real answer.
+export const SKIPPED_VALUE = { skipped: true } as const;
+
+/** True when an answer value is the "skipped" sentinel. */
+export function isSkipped(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { skipped?: unknown }).skipped === true
+  );
 }
 
 export const TYPE_LABELS: Record<string, string> = {
@@ -53,6 +68,7 @@ export function formatAnswer(
   config?: QuestionConfig,
 ): string {
   if (value === null || value === undefined || value === "") return "—";
+  if (isSkipped(value)) return "Skipped";
 
   switch (type) {
     case "rag":
@@ -78,6 +94,8 @@ export function formatAnswer(
 /** True when a value counts as "answered" (for progress). */
 export function isAnswered(type: string, value: unknown): boolean {
   if (value === null || value === undefined || value === "") return false;
+  // A deliberate skip counts as handled — it shouldn't hold up progress.
+  if (isSkipped(value)) return true;
   if (type === "multi_choice") return Array.isArray(value) && value.length > 0;
   if (type === "file_link" && typeof value === "object" && value !== null) {
     const v = value as { link?: string; fileName?: string };

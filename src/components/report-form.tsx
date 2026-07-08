@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Lock, Upload } from "lucide-react";
 import { Segmented } from "./segmented";
 import {
+  isSkipped,
   parseConfig,
   RAG_CHOICES,
+  SKIPPED_VALUE,
   type QuestionConfig,
 } from "@/lib/questions";
 
@@ -234,6 +236,19 @@ function QuestionField({
   titleSize: string;
 }) {
   const config = parseConfig(question.config);
+  const skipped = isSkipped(value);
+  // Remember the pre-skip draft so un-skipping restores it. null (not
+  // undefined) so the save payload overwrites a previously-saved skip.
+  const [stashed, setStashed] = useState<unknown>(null);
+
+  const toggleSkip = () => {
+    if (skipped) {
+      onChange(stashed);
+    } else {
+      setStashed(value === undefined ? null : value);
+      onChange(SKIPPED_VALUE);
+    }
+  };
 
   return (
     <>
@@ -241,7 +256,7 @@ function QuestionField({
         <span className="flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-full bg-accent-soft font-head text-[13px] font-bold text-accent">
           {index + 1}
         </span>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className={`font-head font-bold ${titleSize}`}>
             {question.text}
           </div>
@@ -251,8 +266,41 @@ function QuestionField({
             </div>
           )}
         </div>
+        {config.skippable && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={skipped}
+            onClick={toggleSkip}
+            className={`flex h-fit flex-shrink-0 items-center gap-2 rounded-full border px-3 py-[6px] text-[12px] font-semibold transition-colors ${
+              skipped
+                ? "border-accent bg-accent-soft text-accent"
+                : "border-line text-muted hover:border-accent hover:text-accent"
+            }`}
+          >
+            Skip this week
+            <span
+              aria-hidden
+              className={`relative inline-block h-[14px] w-[24px] rounded-full transition-colors ${
+                skipped ? "bg-accent" : "bg-line"
+              }`}
+            >
+              <span
+                className={`absolute top-[2px] h-[10px] w-[10px] rounded-full bg-surface transition-all ${
+                  skipped ? "left-[12px]" : "left-[2px]"
+                }`}
+              />
+            </span>
+          </button>
+        )}
       </div>
-      <Input question={question} config={config} value={value} onChange={onChange} />
+      {skipped ? (
+        <div className="rounded-[11px] border border-dashed border-line bg-bg px-4 py-3 text-[13px] text-muted">
+          Skipped this week — it won&apos;t appear in the Roundup.
+        </div>
+      ) : (
+        <Input question={question} config={config} value={value} onChange={onChange} />
+      )}
     </>
   );
 }
