@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { EmailSignIn } from "@/components/email-sign-in";
 import { GoogleSignInButton } from "@/components/google-sign-in-button";
 
@@ -6,8 +8,8 @@ export default function LoginPage() {
     <div className="grid min-h-screen grid-cols-1 md:grid-cols-[1.05fr_0.95fr]">
       {/* Left panel — brand */}
       <div className="relative hidden flex-col justify-between overflow-hidden bg-accent px-[60px] py-14 text-accent-ink md:flex">
-        {/* Product mark + name */}
-        <div className="relative z-[2] flex items-center gap-3.5">
+        {/* Product mark + name — links back to the homepage */}
+        <Link href="/" className="relative z-[2] flex w-fit items-center gap-3.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/roundup-icon-white.svg"
@@ -17,7 +19,7 @@ export default function LoginPage() {
           <span className="font-head text-[18px] font-bold tracking-[-0.01em]">
             Roundup
           </span>
-        </div>
+        </Link>
         <div className="relative z-[2] max-w-[430px]">
           <div className="font-head text-[46px] font-bold leading-[1.05] tracking-[-0.025em]">
             Your team&apos;s week, in one place.
@@ -35,13 +37,13 @@ export default function LoginPage() {
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="fade-up w-full max-w-[380px]">
           {/* Brand row — only on mobile, where the brand panel is hidden */}
-          <div className="mb-8 flex items-center gap-3 md:hidden">
+          <Link href="/" className="mb-8 flex w-fit items-center gap-3 md:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/roundup-icon.svg" alt="" className="h-9 w-9" />
             <span className="font-head text-[18px] font-bold tracking-[-0.01em]">
               Roundup
             </span>
-          </div>
+          </Link>
           <div className="font-head text-[28px] font-bold tracking-[-0.02em]">
             Welcome back
           </div>
@@ -60,6 +62,14 @@ export default function LoginPage() {
             in under a minute. Joining an existing team? Ask an administrator
             to invite your email first.
           </p>
+          <div className="mt-7 flex justify-center">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full border border-line px-3.5 py-[7px] text-[13px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
+            >
+              <ArrowLeft size={15} /> Back to homepage
+            </Link>
+          </div>
         </div>
       </div>
     </div>
