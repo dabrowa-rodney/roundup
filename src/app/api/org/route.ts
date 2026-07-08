@@ -4,7 +4,9 @@ import { db } from "@/db";
 import { organisations } from "@/db/schema";
 import { encryptSecret } from "@/lib/crypto";
 import { slugProblem } from "@/lib/org";
+import { resolvePlan } from "@/lib/plans";
 import { getSessionUser } from "@/lib/session";
+import { stripeConfigured } from "@/lib/stripe";
 
 // GET /api/org — the caller's organisation (never returns the stored key).
 export async function GET() {
@@ -14,11 +16,7 @@ export async function GET() {
   }
   const org = (
     await db
-      .select({
-        name: organisations.name,
-        slug: organisations.slug,
-        keyEnc: organisations.anthropicKeyEnc,
-      })
+      .select()
       .from(organisations)
       .where(eq(organisations.id, me.orgId))
       .limit(1)
@@ -26,8 +24,24 @@ export async function GET() {
   if (!org) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const plan = resolvePlan(org);
   return NextResponse.json({
-    org: { name: org.name, slug: org.slug, hasAnthropicKey: !!org.keyEnc },
+    org: {
+      name: org.name,
+      slug: org.slug,
+      hasAnthropicKey: !!org.anthropicKeyEnc,
+      billing: {
+        tier: plan.tier,
+        label: plan.limits.label,
+        paidPlan: plan.paidPlan,
+        planStatus: org.planStatus,
+        isComplimentary: plan.isComplimentary,
+        isTrial: plan.isTrial,
+        trialDaysLeft: plan.trialDaysLeft,
+        hasStripeCustomer: !!org.stripeCustomerId,
+        available: stripeConfigured(),
+      },
+    },
   });
 }
 

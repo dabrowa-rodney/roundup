@@ -2,6 +2,7 @@
 
 import { signOut, useSession } from "next-auth/react";
 import { Avatar } from "./ui";
+import { BillingCard } from "./billing-card";
 import { OrgSettingsCards } from "./org-settings-cards";
 import {
   useSettings,
@@ -188,6 +189,9 @@ export function SettingsScreen() {
 
       {/* Organisation + AI generation */}
       <OrgSettingsCards />
+
+      {/* Plan & billing */}
+      <BillingCard />
 
       {/* Weekly schedule */}
       <Card>

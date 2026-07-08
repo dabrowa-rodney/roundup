@@ -59,9 +59,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // New organisations start on a card-free 14-day Team trial.
   const [org] = await db
     .insert(organisations)
-    .values({ name, slug })
+    .values({
+      name,
+      slug,
+      trialEndsAt: new Date(Date.now() + 14 * 86_400_000),
+    })
     .returning({ id: organisations.id });
 
   // Org defaults + the founding admin. Email sign-ups carry their name from

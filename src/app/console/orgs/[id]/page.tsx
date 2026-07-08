@@ -134,6 +134,9 @@ export default async function ConsoleOrgPage({
             slug: org.slug,
             createdAt: org.createdAt.toISOString(),
             hasAnthropicKey: !!org.anthropicKeyEnc,
+            plan: org.plan,
+            planStatus: org.planStatus,
+            trialEndsAt: org.trialEndsAt?.toISOString() ?? null,
           }}
           settings={
             settingsRow

@@ -20,6 +20,8 @@ interface OrgRow {
   id: number;
   name: string;
   slug: string;
+  plan: string;
+  isTrial: boolean;
   createdAt: Date;
   hasKey: boolean;
   members: number;
@@ -111,6 +113,11 @@ export default async function ConsolePage() {
     id: o.id,
     name: o.name,
     slug: o.slug,
+    plan: o.plan,
+    isTrial:
+      o.plan === "free" &&
+      !!o.trialEndsAt &&
+      o.trialEndsAt.getTime() > now.getTime(),
     createdAt: o.createdAt,
     hasKey: !!o.anthropicKeyEnc,
     members: mMap.get(o.id)?.members ?? 0,
@@ -149,6 +156,12 @@ export default async function ConsolePage() {
             Owner
           </span>
           <div className="flex-1" />
+          <Link
+            href="/console/discounts"
+            className="mr-4 text-[13px] font-semibold text-muted hover:text-ink"
+          >
+            Discounts
+          </Link>
           <a
             href="https://www.roundup.work/my-reports"
             className="text-[13px] font-semibold text-muted hover:text-ink"
@@ -189,7 +202,26 @@ export default async function ConsolePage() {
               className={`grid ${COLS} items-center gap-3.5 border-t border-line px-[22px] py-[15px] transition-colors hover:bg-accent-soft/30`}
             >
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold">{r.name}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-semibold">{r.name}</span>
+                  <span
+                    className={`whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.03em] ${
+                      r.plan === "complimentary"
+                        ? "bg-good-soft text-good-ink"
+                        : r.plan === "team" || r.plan === "business"
+                          ? "bg-accent-soft text-accent"
+                          : r.isTrial
+                            ? "bg-warn-soft text-warn-ink"
+                            : "bg-line/50 text-muted"
+                    }`}
+                  >
+                    {r.plan === "complimentary"
+                      ? "comp"
+                      : r.isTrial
+                        ? "trial"
+                        : r.plan}
+                  </span>
+                </div>
                 <div className="truncate font-mono text-[11.5px] text-muted">
                   {r.slug}.roundup.work
                 </div>

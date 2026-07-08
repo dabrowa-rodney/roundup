@@ -22,8 +22,11 @@ import {
 */
 
 // ── Organisations (tenants) ────────────────────────────
-// (Billing lands here later: stripeCustomerId, plan, planStatus — org-level,
-//  so gate features by organisation, never by user.)
+// Billing is org-level — gate features by organisation, never by user.
+// plan: 'free' | 'team' | 'business' | 'complimentary' (owner-granted).
+// planStatus mirrors the Stripe subscription status ('active', 'past_due',
+// 'canceled', …) and is null for free/complimentary. trialEndsAt drives the
+// card-free 14-day Team trial for new signups. See lib/plans.ts.
 export const organisations = pgTable("organisations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -32,6 +35,10 @@ export const organisations = pgTable("organisations", {
   // Org's own Anthropic API key, AES-256-GCM encrypted (see lib/crypto.ts).
   // Null = no AI generation; the deterministic compiler is used instead.
   anthropicKeyEnc: text("anthropic_key_enc"),
+  plan: text("plan").notNull().default("free"),
+  planStatus: text("plan_status"),
+  stripeCustomerId: text("stripe_customer_id"),
+  trialEndsAt: timestamp("trial_ends_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

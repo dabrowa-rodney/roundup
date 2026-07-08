@@ -80,6 +80,16 @@ export async function PATCH(
     orgUpdates.anthropicKeyEnc = null;
   }
 
+  // Grant/revoke complimentary access. Revoking never touches a real Stripe
+  // subscription — it only applies when the org isn't on a paid plan.
+  if (body.plan === "complimentary") {
+    orgUpdates.plan = "complimentary";
+    orgUpdates.planStatus = null;
+  } else if (body.plan === "free") {
+    orgUpdates.plan = "free";
+    orgUpdates.planStatus = null;
+  }
+
   if (Object.keys(orgUpdates).length > 0) {
     await db
       .update(organisations)

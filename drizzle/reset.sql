@@ -37,6 +37,10 @@ CREATE TABLE "organisations" (
 	"name" text NOT NULL,
 	"slug" text NOT NULL,
 	"anthropic_key_enc" text,
+	"plan" text DEFAULT 'free' NOT NULL,
+	"plan_status" text,
+	"stripe_customer_id" text,
+	"trial_ends_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "organisations_slug_unique" UNIQUE("slug")
 );

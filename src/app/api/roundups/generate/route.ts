@@ -14,6 +14,7 @@ import {
   users,
 } from "@/db/schema";
 import { decryptSecret } from "@/lib/crypto";
+import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import { emailConfigured, roundupEmail, sendEmail } from "@/lib/email";
 import {
@@ -190,6 +191,9 @@ export async function POST(req: NextRequest) {
   });
 
   // The org's own Anthropic key (BYO): no key → deterministic compile.
+  // AI is also a plan feature — Free-tier orgs compile deterministically
+  // even with a key connected.
+  const plan = await getOrgPlan(me.orgId);
   const org = (
     await db
       .select({ keyEnc: organisations.anthropicKeyEnc })
@@ -197,7 +201,7 @@ export async function POST(req: NextRequest) {
       .where(eq(organisations.id, me.orgId))
       .limit(1)
   )[0];
-  const aiKey = decryptSecret(org?.keyEnc);
+  const aiKey = plan.limits.ai ? decryptSecret(org?.keyEnc) : null;
 
   const now = new Date();
   const content = await generateRoundupAI(

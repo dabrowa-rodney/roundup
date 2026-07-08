@@ -4,6 +4,7 @@ import { organisations, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
 import { emailConfigured, inviteEmail, sendEmail } from "@/lib/email";
+import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 
 // POST /api/users/invite — pre-create a member of the caller's org; when that
@@ -15,6 +16,20 @@ export async function POST(req: NextRequest) {
   }
   if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Plan gate: member cap (every role counts as a seat).
+  const plan = await getOrgPlan(me.orgId);
+  const memberCount = (
+    await db.select({ id: users.id }).from(users).where(eq(users.orgId, me.orgId))
+  ).length;
+  if (memberCount >= plan.limits.maxMembers) {
+    return NextResponse.json(
+      {
+        error: `The ${plan.limits.label} plan includes up to ${plan.limits.maxMembers} members — upgrade in Settings to invite more.`,
+      },
+      { status: 403 },
+    );
   }
 
   const body = await req.json();

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { reportTemplates, reportAssignees, questions, users } from "@/db/schema";
 import { and, eq, isNull, sql, asc, inArray } from "drizzle-orm";
+import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 
 // GET /api/templates — the caller's org's templates with question counts + assignees
@@ -78,6 +79,28 @@ export async function POST(req: NextRequest) {
   }
   if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Plan gate: active-template cap.
+  const plan = await getOrgPlan(me.orgId);
+  if (Number.isFinite(plan.limits.maxTemplates)) {
+    const active = await db
+      .select({ id: reportTemplates.id })
+      .from(reportTemplates)
+      .where(
+        and(
+          eq(reportTemplates.orgId, me.orgId),
+          isNull(reportTemplates.archivedAt),
+        ),
+      );
+    if (active.length >= plan.limits.maxTemplates) {
+      return NextResponse.json(
+        {
+          error: `The ${plan.limits.label} plan includes ${plan.limits.maxTemplates} report template${plan.limits.maxTemplates === 1 ? "" : "s"} — upgrade in Settings to add more.`,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   const body = await req.json();

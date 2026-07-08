@@ -11,6 +11,9 @@ interface OrgProp {
   slug: string;
   createdAt: string;
   hasAnthropicKey: boolean;
+  plan: string;
+  planStatus: string | null;
+  trialEndsAt: string | null;
 }
 interface SettingsProp {
   closeDay: string;
@@ -163,6 +166,23 @@ export function ConsoleOrgDetail({
             year: "numeric",
           })}
         </span>
+        <span
+          className={`rounded-md px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.03em] ${
+            org.plan === "complimentary"
+              ? "bg-good-soft text-good-ink"
+              : org.plan === "team" || org.plan === "business"
+                ? "bg-accent-soft text-accent"
+                : "bg-line/50 text-muted"
+          }`}
+        >
+          {org.plan}
+          {org.planStatus ? ` · ${org.planStatus}` : ""}
+          {org.plan === "free" &&
+          org.trialEndsAt &&
+          new Date(org.trialEndsAt).getTime() > Date.now()
+            ? " · trialing"
+            : ""}
+        </span>
         {msg && (
           <span
             className={`ml-auto text-[13px] font-semibold ${msg.ok ? "text-good" : "text-bad"}`}
@@ -233,6 +253,35 @@ export function ConsoleOrgDetail({
                 </button>
               )}
             </div>
+
+            {(org.plan === "free" || org.plan === "complimentary") && (
+              <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+                <span className="text-[13px] text-muted">
+                  {org.plan === "complimentary"
+                    ? "This organisation has complimentary (full) access."
+                    : "Grant full access without a subscription:"}
+                </span>
+                <button
+                  onClick={() =>
+                    patch(
+                      {
+                        plan:
+                          org.plan === "complimentary" ? "free" : "complimentary",
+                      },
+                      org.plan === "complimentary"
+                        ? "Reverted to Free"
+                        : "Complimentary access granted",
+                    )
+                  }
+                  disabled={busy}
+                  className="rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink hover:border-accent disabled:opacity-40"
+                >
+                  {org.plan === "complimentary"
+                    ? "Revoke complimentary"
+                    : "Grant complimentary"}
+                </button>
+              </div>
+            )}
           </Card>
 
           {/* Schedule + reminders */}
