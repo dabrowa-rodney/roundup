@@ -322,7 +322,7 @@ function QuestionModal({
                 Contributors can skip this question
               </span>
               <span className="block text-[12.5px] text-muted">
-                Adds a &ldquo;Skip this week&rdquo; option on their report;
+                Adds a &ldquo;Nothing this week&rdquo; option on their report;
                 skipped questions stay out of the Roundup.
               </span>
             </span>

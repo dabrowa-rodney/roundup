@@ -278,7 +278,7 @@ function QuestionField({
                 : "border-line text-muted hover:border-accent hover:text-accent"
             }`}
           >
-            Skip this week
+            Nothing this week
             <span
               aria-hidden
               className={`relative inline-block h-[14px] w-[24px] rounded-full transition-colors ${
@@ -296,7 +296,7 @@ function QuestionField({
       </div>
       {skipped ? (
         <div className="rounded-[11px] border border-dashed border-line bg-bg px-4 py-3 text-[13px] text-muted">
-          Skipped this week — it won&apos;t appear in the Roundup.
+          Nothing to report this week — it won&apos;t appear in the Roundup.
         </div>
       ) : (
         <Input question={question} config={config} value={value} onChange={onChange} />
