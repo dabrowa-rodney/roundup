@@ -59,13 +59,13 @@ export async function sendEmail(msg: EmailMessage): Promise<boolean> {
 function shell(body: string): string {
   return `<!doctype html>
 <html>
-  <body style="margin:0;padding:0;background:#F4F6FB;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#27325E;">
-    <div style="max-width:560px;margin:0 auto;padding:32px 20px;">
-      <div style="font-size:18px;font-weight:800;letter-spacing:-0.02em;margin-bottom:18px;">Roundup</div>
-      <div style="background:#FFFFFF;border:1px solid #E3E8F4;border-radius:14px;padding:26px 28px;">
+  <body style="margin:0;padding:0;background:#F4F6FB;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#27325E;">
+    <div style="max-width:560px;margin:0 auto;padding:36px 20px;">
+      <div style="font-size:19px;font-weight:800;letter-spacing:-0.02em;margin-bottom:20px;">Roundup</div>
+      <div style="background:#FFFFFF;border:1px solid #E3E8F4;border-radius:16px;padding:32px;">
         ${body}
       </div>
-      <div style="font-size:12px;color:#8792AD;margin-top:16px;">
+      <div style="font-size:12px;color:#8792AD;margin-top:20px;line-height:1.5;">
         Sent by Roundup, the weekly update platform.
       </div>
     </div>
@@ -73,8 +73,17 @@ function shell(body: string): string {
 </html>`;
 }
 
+// Bulletproof button: table-based so it renders as a real button in every
+// client (CSS-only anchors degrade to plain links in Outlook), with breathing
+// room above and below.
 function button(href: string, label: string): string {
-  return `<a href="${href}" style="display:inline-block;background:#4368FA;color:#FFFFFF;font-weight:700;font-size:14px;text-decoration:none;border-radius:999px;padding:11px 22px;margin-top:18px;">${label}</a>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px;">
+    <tr>
+      <td style="border-radius:999px;background:#4368FA;">
+        <a href="${href}" style="display:inline-block;padding:13px 30px;font-size:14.5px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:999px;">${label}</a>
+      </td>
+    </tr>
+  </table>`;
 }
 
 export function escapeHtml(s: string): string {
