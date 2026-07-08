@@ -271,11 +271,14 @@ export function RoundupViewer({
   full,
   week,
   sent = false,
+  canManage = false,
 }: {
   skim: SkimJson;
   full: FullJson;
   week?: string;
   sent?: boolean;
+  /** Admins can regenerate and send; recipients just read. */
+  canManage?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>("skim");
 
@@ -304,8 +307,8 @@ export function RoundupViewer({
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
-          {week && !sent && <RegenerateButton week={week} />}
-          {week && <SendButton week={week} initialSent={sent} />}
+          {canManage && week && !sent && <RegenerateButton week={week} />}
+          {canManage && week && <SendButton week={week} initialSent={sent} />}
         </div>
       </div>
 

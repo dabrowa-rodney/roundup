@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { LogOut, Settings } from "lucide-react";
+import { LogOut, Settings, Table } from "lucide-react";
 import { Avatar } from "./ui";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -26,6 +26,8 @@ export function Topbar() {
   const roleLabel = role ? (ROLE_LABEL[role] ?? "Member") : "Member";
   const onSettings =
     pathname === "/settings" || pathname.startsWith("/settings/");
+  const onRoundups =
+    pathname === "/roundups" || pathname.startsWith("/roundups/");
 
   return (
     <header className="flex h-[58px] flex-shrink-0 items-center gap-3 border-b border-line bg-surface px-5 sm:px-8">
@@ -38,6 +40,21 @@ export function Topbar() {
       </Link>
 
       <div className="flex-1" />
+
+      {role === "recipient" && (
+        <Link
+          href="/roundups"
+          aria-current={onRoundups ? "page" : undefined}
+          className={`flex items-center gap-1.5 rounded-full px-3 py-[7px] text-[13px] transition-colors ${
+            onRoundups
+              ? "bg-accent-soft font-semibold text-accent"
+              : "font-medium text-muted hover:text-accent"
+          }`}
+        >
+          <Table size={15} strokeWidth={2} />
+          <span className="hidden sm:inline">Roundups</span>
+        </Link>
+      )}
 
       <Link
         href="/settings"

@@ -24,8 +24,9 @@ export default async function RoundupViewerPage({
 
   const me = await getSessionUser();
   const isAdmin = me?.role === "admin";
-  // Roundups are a leadership view — not for contributors.
-  if (!me || !isAdmin) redirect("/my-reports");
+  // Admins manage roundups; recipients may read sent ones. Contributors
+  // have no roundup access.
+  if (!me || (!isAdmin && me.role !== "recipient")) redirect("/my-reports");
 
   const roundup = (
     await db
@@ -34,6 +35,10 @@ export default async function RoundupViewerPage({
       .where(and(eq(roundups.orgId, me.orgId), eq(roundups.weekStart, weekIso)))
       .limit(1)
   )[0];
+
+  // Recipients only ever see the distributed version — drafts and previews
+  // stay with admins.
+  if (!isAdmin && roundup?.status !== "sent") redirect("/roundups");
 
   // Generation compiles submitted/locked reports — with none, there is
   // nothing to preview, so the button is withheld (the API refuses too).
@@ -60,6 +65,7 @@ export default async function RoundupViewerPage({
           full={roundup.fullJson as FullJson}
           week={weekIso}
           sent={roundup.status === "sent"}
+          canManage={isAdmin}
         />
       ) : (
         <NotGenerated

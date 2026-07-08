@@ -14,6 +14,8 @@ import {
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
 const COLS = "min-w-[680px] grid-cols-[1.2fr_1.4fr_1fr_1fr_90px]";
+// Recipients see sent roundups only, without the ops detail.
+const COLS_READER = "min-w-[480px] grid-cols-[1.2fr_1.6fr_90px]";
 
 type Status = "Pending" | "Draft" | "Sent";
 
@@ -39,11 +41,74 @@ function StatusPill({ status }: { status: Status }) {
 }
 
 export default async function RoundupsPage() {
-  // Roundups are a leadership view — not for contributors.
+  // Admins manage roundups; recipients may read sent ones. Contributors
+  // have no roundup access.
   const me = await getSessionUser();
-  if (me?.role !== "admin") redirect("/my-reports");
+  if (!me || (me.role !== "admin" && me.role !== "recipient"))
+    redirect("/my-reports");
+  const isAdmin = me.role === "admin";
 
   const weekIso = mondayISO(new Date());
+
+  // Recipients: a simple reading list of everything that's been sent.
+  if (!isAdmin) {
+    const sentRoundups = await db
+      .select({ weekStart: roundups.weekStart })
+      .from(roundups)
+      .where(and(eq(roundups.orgId, me.orgId), eq(roundups.status, "sent")));
+    const sentWeeks = sentRoundups
+      .map((r) => r.weekStart)
+      .sort()
+      .reverse();
+
+    return (
+      <Screen title="Roundups" subtitle="Weekly summaries sent to you">
+        {sentWeeks.length === 0 ? (
+          <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center">
+            <div className="font-head text-[18px] font-bold">
+              No roundups yet
+            </div>
+            <p className="mx-auto mt-1.5 max-w-[440px] text-[14px] text-muted">
+              Once a weekly Roundup is sent, it will appear here to read any
+              time.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-card border border-line bg-surface">
+            <div
+              className={`grid ${COLS_READER} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted`}
+            >
+              <span>WEEK</span>
+              <span>RANGE</span>
+              <span />
+            </div>
+            {sentWeeks.map((weekStart) => {
+              const d = parseISODate(weekStart);
+              return (
+                <div
+                  key={weekStart}
+                  className={`grid ${COLS_READER} items-center gap-3.5 border-t border-line px-[22px] py-[15px]`}
+                >
+                  <span className="font-head text-[14.5px] font-bold">
+                    {weekNumberLabel(d)}
+                  </span>
+                  <span className="text-[13.5px] text-muted">
+                    {weekRange(d)}
+                  </span>
+                  <Link
+                    href={`/roundups/${weekStart}`}
+                    className="text-right text-[13.5px] font-bold text-accent"
+                  >
+                    Read →
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Screen>
+    );
+  }
 
   // Close schedule (for the banner), with defaults if unset.
   const settingsRow = (
