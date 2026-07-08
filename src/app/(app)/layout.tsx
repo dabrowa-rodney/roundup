@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getSessionUser } from "@/lib/session";
 import { Sidebar } from "@/components/sidebar";
+import { Topbar } from "@/components/topbar";
 import { SettingsProvider } from "@/components/settings-provider";
 
 export default async function AppLayout({
@@ -18,15 +19,26 @@ export default async function AppLayout({
   const me = await getSessionUser();
   if (!me) redirect("/onboarding");
 
-  return (
-    <SettingsProvider>
-      {/* Column on mobile (top bar over content), row on desktop (sidebar
-          beside content). <main> is the single scroll container on both, so
-          each Screen's sticky header keeps working. */}
+  // Contributors and recipients only complete reports, so they get a slim
+  // top bar instead of the admin sidebar.
+  const shell =
+    me.role === "admin" ? (
       <div className="flex h-screen flex-col lg:flex-row">
         <Sidebar />
         <main className="sc min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
+    ) : (
+      <div className="flex h-screen flex-col">
+        <Topbar />
+        <main className="sc min-w-0 flex-1 overflow-auto">{children}</main>
+      </div>
+    );
+
+  return (
+    <SettingsProvider>
+      {/* <main> is the single scroll container in both shells, so each
+          Screen's sticky header keeps working. */}
+      {shell}
     </SettingsProvider>
   );
 }
