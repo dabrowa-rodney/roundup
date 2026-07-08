@@ -123,7 +123,7 @@ function SidebarContent() {
         </div>
         {session && (
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
+            onClick={() => signOut({ callbackUrl: "/api/auth/signout-complete" })}
             aria-label="Sign out"
             title="Sign out"
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-accent-soft hover:text-accent"

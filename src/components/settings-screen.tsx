@@ -178,7 +178,7 @@ export function SettingsScreen() {
           </span>
           {session && (
             <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
+              onClick={() => signOut({ callbackUrl: "/api/auth/signout-complete" })}
               className="rounded-full border border-line bg-surface px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:border-accent"
             >
               Sign out
