@@ -80,7 +80,7 @@ export function SectionLabel({
 }) {
   return (
     <div
-      className={`text-[12px] font-bold uppercase tracking-[0.06em] text-muted ${className}`}
+      className={`text-[12px] font-semibold uppercase tracking-[0.06em] text-muted ${className}`}
     >
       {children}
     </div>

@@ -58,7 +58,6 @@ interface Question {
   config: unknown;
 }
 
-const EDGE_COLORS = ["#2E6B4E", "#2D54EB", "#C0455B", "#B5762E", "#1F8A8A", "#7A4FB5", "#3D7A9E", "#9E4F7A"];
 const TYPE_LABELS: Record<string, string> = {
   rag: "RAG",
   long_text: "Long text",
@@ -639,17 +638,15 @@ export function ReportsManager() {
             </div>
           ) : (
             <div className="flex flex-col gap-2.5">
-              {templates.filter((t) => !t.archivedAt).map((r, i) => {
+              {templates.filter((t) => !t.archivedAt).map((r) => {
                 const active = r.id === selected;
-                const edgeColor = EDGE_COLORS[i % EDGE_COLORS.length];
                 return (
                   <button
                     key={r.id}
                     onClick={() => selectTemplate(r.id)}
-                    className={`flex items-center gap-3.5 rounded-[14px] border bg-surface px-[18px] py-4 text-left transition-colors ${
+                    className={`flex items-center gap-3.5 rounded-card border bg-surface px-[18px] py-4 text-left transition-colors ${
                       active ? "border-accent" : "border-line hover:border-accent"
                     }`}
-                    style={{ borderLeft: `3px solid ${edgeColor}` }}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-head text-[15px] font-bold">{r.name}</div>

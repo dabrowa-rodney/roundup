@@ -164,7 +164,7 @@ export default async function RoundupsPage() {
       ) : (
         <div className="overflow-x-auto rounded-card border border-line bg-surface">
           <div
-            className={`grid ${COLS} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-bold tracking-[0.04em] text-muted`}
+            className={`grid ${COLS} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted`}
           >
             <span>WEEK</span>
             <span>RANGE</span>

@@ -448,7 +448,7 @@ export function ConsoleOrgDetail({
           <Card title="Recent activity">
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <div>
-                <div className="mb-2 text-[12px] font-bold tracking-[0.04em] text-muted">
+                <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
                   REPORTS BY WEEK
                 </div>
                 {weeks.length === 0 && (
@@ -469,7 +469,7 @@ export function ConsoleOrgDetail({
                 ))}
               </div>
               <div>
-                <div className="mb-2 text-[12px] font-bold tracking-[0.04em] text-muted">
+                <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
                   ROUNDUPS
                 </div>
                 {roundups.length === 0 && (

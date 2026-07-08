@@ -105,14 +105,14 @@ export function ReportForm({
     variant === "focus"
       ? "mx-auto flex max-w-[640px] flex-col gap-7"
       : variant === "doc"
-        ? "mx-auto max-w-[780px] rounded-card border border-line bg-surface px-11 py-1.5 shadow-[0_1px_3px_rgba(39,50,94,0.07)]"
+        ? "mx-auto max-w-[780px] rounded-card border border-line bg-surface px-11 py-1.5"
         : "mx-auto flex max-w-[780px] flex-col gap-4";
   const blockClass =
     variant === "doc"
       ? "border-b border-line py-[26px] last:border-b-0"
       : variant === "focus"
         ? "rounded-card border border-line bg-surface px-8 py-[30px]"
-        : "rounded-card border border-line bg-surface px-6 py-[22px] shadow-[0_1px_2px_rgba(39,50,94,0.06)]";
+        : "rounded-card border border-line bg-surface px-6 py-[22px]";
   const titleSize = variant === "focus" ? "text-[20px]" : "text-[16px]";
 
   const saveLabel =
