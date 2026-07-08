@@ -29,9 +29,13 @@ export function Topbar() {
   const onRoundups =
     pathname === "/roundups" || pathname.startsWith("/roundups/");
 
+  // A recipient's home is the Roundups reading list; contributors' is
+  // their reports.
+  const home = role === "recipient" ? "/roundups" : "/my-reports";
+
   return (
     <header className="flex h-[58px] flex-shrink-0 items-center gap-3 border-b border-line bg-surface px-5 sm:px-8">
-      <Link href="/my-reports" className="flex items-center gap-2.5">
+      <Link href={home} className="flex items-center gap-2.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/roundup-icon.svg" alt="" className="h-6 w-6" />
         <span className="font-head text-[17px] font-bold tracking-[-0.01em]">
