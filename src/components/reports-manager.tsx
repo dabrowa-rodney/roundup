@@ -620,7 +620,7 @@ export function ReportsManager() {
 
       <div className="grid grid-cols-1 items-start gap-[22px] lg:grid-cols-[1.3fr_1fr]">
         {/* Left — template list */}
-        <div>
+        <div className="min-w-0">
           <div className="mb-3.5 flex items-center">
             <SectionLabel className="tracking-[0.05em]">Report templates</SectionLabel>
             <div className="flex-1" />
@@ -759,7 +759,7 @@ export function ReportsManager() {
 
         {/* Right — editor panel */}
         {selectedTemplate ? (
-          <div className="sticky top-[96px] rounded-card border border-line bg-surface p-[22px]">
+          <div className="sticky top-[96px] min-w-0 rounded-card border border-line bg-surface p-[22px]">
             <div className="flex items-center gap-2 text-[12px] font-bold tracking-[0.05em] text-accent">
               <span className="h-[7px] w-[7px] rounded-full bg-accent" />
               EDITING
@@ -944,7 +944,7 @@ export function ReportsManager() {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--good)" strokeWidth={2} aria-hidden>
                     <path d="M4 4h16v16H4z" /><path d="M8 8h8M8 12h8M8 16h5" />
                   </svg>
-                  <span className="flex-1 truncate text-[13px] text-muted">{selectedTemplate.dataSourceUrl}</span>
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{selectedTemplate.dataSourceUrl}</span>
                   <span className="text-[11px] font-semibold text-good">connected</span>
                 </div>
               ) : (
