@@ -56,19 +56,36 @@ export async function sendEmail(msg: EmailMessage): Promise<boolean> {
 // Minimal inline-styled HTML (email clients ignore stylesheets). Wonde-ish
 // palette: primary #4368FA, ink #27325E.
 
+// Full table skeleton with attribute fallbacks (bgcolor/cellpadding survive
+// clients that strip CSS, e.g. screening/preview modes). The explicit spacer
+// row keeps a blank line between the content and the footer even when all
+// styling is discarded and the email renders as flat text.
 function shell(body: string): string {
   return `<!doctype html>
 <html>
-  <body style="margin:0;padding:0;background:#F4F6FB;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#27325E;">
-    <div style="max-width:560px;margin:0 auto;padding:36px 20px;">
-      <div style="font-size:19px;font-weight:800;letter-spacing:-0.02em;margin-bottom:20px;">Roundup</div>
-      <div style="background:#FFFFFF;border:1px solid #E3E8F4;border-radius:16px;padding:32px;">
-        ${body}
-      </div>
-      <div style="font-size:12px;color:#8792AD;margin-top:20px;line-height:1.5;">
-        Sent by Roundup, the weekly update platform.
-      </div>
-    </div>
+  <body style="margin:0;padding:0;background:#F4F6FB;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;color:#27325E;" bgcolor="#F4F6FB">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F4F6FB">
+      <tr>
+        <td align="center" style="padding:36px 16px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
+            <tr>
+              <td style="padding:0 2px 20px;font-size:19px;font-weight:800;letter-spacing:-0.02em;color:#27325E;">Roundup</td>
+            </tr>
+            <tr>
+              <td bgcolor="#FFFFFF" style="background:#FFFFFF;border:1px solid #E3E8F4;border-radius:16px;padding:32px;color:#27325E;">
+                ${body}
+              </td>
+            </tr>
+            <tr>
+              <td style="font-size:16px;line-height:16px;">&nbsp;</td>
+            </tr>
+            <tr>
+              <td style="padding:0 2px;font-size:12px;color:#8792AD;line-height:1.5;">Sent by Roundup, the weekly update platform.</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>`;
 }
@@ -77,10 +94,10 @@ function shell(body: string): string {
 // client (CSS-only anchors degrade to plain links in Outlook), with breathing
 // room above and below.
 function button(href: string, label: string): string {
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 8px;">
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 4px;">
     <tr>
-      <td style="border-radius:999px;background:#4368FA;">
-        <a href="${href}" style="display:inline-block;padding:13px 30px;font-size:14.5px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:999px;">${label}</a>
+      <td bgcolor="#4368FA" style="border-radius:999px;background:#4368FA;">
+        <a href="${href}" style="display:inline-block;padding:13px 30px;font-size:14.5px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:999px;" target="_blank">${label}</a>
       </td>
     </tr>
   </table>`;
