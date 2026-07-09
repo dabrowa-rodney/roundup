@@ -198,5 +198,4 @@ scripts/stripe-setup.mjs  # idempotent Stripe bootstrap
 - **Per-org subdomains** (`acme.roundup.work`) — DNS + shared session cookie
   done; host-routing middleware next
 - **Custom domains** (`roundup.acme.com`) — Business tier; central-login handoff
-- **Live Stripe** — currently test mode
 - Private Google Sheets via service account
