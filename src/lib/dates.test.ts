@@ -4,7 +4,14 @@ import {
   isoWeek,
   mondayISO,
   mondayOf,
+  monthStartISO,
+  nextPeriodStartISO,
   parseISODate,
+  periodForCadence,
+  periodLabel,
+  periodRange,
+  periodStartISO,
+  quarterStartISO,
   relativeTime,
   toISODate,
   weekLabel,
@@ -96,5 +103,71 @@ describe("greeting", () => {
     expect(greeting()).toBe("Good afternoon");
     vi.setSystemTime(new Date("2026-07-01T20:00:00Z"));
     expect(greeting()).toBe("Good evening");
+  });
+});
+
+describe("periodForCadence", () => {
+  it("maps team cadences to period types, defaulting to week", () => {
+    expect(periodForCadence("weekly")).toBe("week");
+    expect(periodForCadence("monthly")).toBe("month");
+    expect(periodForCadence("quarterly")).toBe("quarter");
+    expect(periodForCadence("anything-else")).toBe("week");
+  });
+});
+
+describe("monthStartISO / quarterStartISO", () => {
+  it("returns the 1st of the containing month", () => {
+    expect(monthStartISO(utc("2026-07-16T12:00:00Z"))).toBe("2026-07-01");
+    expect(monthStartISO(utc("2026-01-01T00:00:00Z"))).toBe("2026-01-01");
+    expect(monthStartISO(utc("2026-12-31T23:59:59Z"))).toBe("2026-12-01");
+  });
+  it("returns the calendar-quarter start (Jan/Apr/Jul/Oct)", () => {
+    expect(quarterStartISO(utc("2026-01-15T00:00:00Z"))).toBe("2026-01-01");
+    expect(quarterStartISO(utc("2026-03-31T23:59:00Z"))).toBe("2026-01-01");
+    expect(quarterStartISO(utc("2026-04-01T00:00:00Z"))).toBe("2026-04-01");
+    expect(quarterStartISO(utc("2026-08-20T00:00:00Z"))).toBe("2026-07-01");
+    expect(quarterStartISO(utc("2026-11-01T00:00:00Z"))).toBe("2026-10-01");
+  });
+});
+
+describe("periodStartISO", () => {
+  it("dispatches by period type", () => {
+    const d = utc("2026-07-16T09:00:00Z"); // a Thursday
+    expect(periodStartISO("week", d)).toBe("2026-07-13");
+    expect(periodStartISO("month", d)).toBe("2026-07-01");
+    expect(periodStartISO("quarter", d)).toBe("2026-07-01");
+  });
+});
+
+describe("periodLabel / periodRange", () => {
+  it("labels weeks as today", () => {
+    expect(periodLabel("week", "2026-06-22")).toBe("Week 26");
+    expect(periodRange("week", "2026-06-22")).toBe("22–28 Jun 2026");
+  });
+  it("labels months with full name and correct day count", () => {
+    expect(periodLabel("month", "2026-06-01")).toBe("June 2026");
+    expect(periodRange("month", "2026-06-01")).toBe("1–30 Jun 2026");
+    expect(periodRange("month", "2026-02-01")).toBe("1–28 Feb 2026");
+    expect(periodRange("month", "2028-02-01")).toBe("1–29 Feb 2028"); // leap year
+  });
+  it("labels quarters with the month span", () => {
+    expect(periodLabel("quarter", "2026-04-01")).toBe("Q2 2026");
+    expect(periodRange("quarter", "2026-04-01")).toBe("Apr–Jun 2026");
+    expect(periodLabel("quarter", "2026-10-01")).toBe("Q4 2026");
+    expect(periodRange("quarter", "2026-10-01")).toBe("Oct–Dec 2026");
+  });
+});
+
+describe("nextPeriodStartISO", () => {
+  it("advances a week by 7 days", () => {
+    expect(nextPeriodStartISO("week", "2026-06-29")).toBe("2026-07-06");
+  });
+  it("rolls months and years", () => {
+    expect(nextPeriodStartISO("month", "2026-06-01")).toBe("2026-07-01");
+    expect(nextPeriodStartISO("month", "2026-12-01")).toBe("2027-01-01");
+  });
+  it("rolls quarters and years", () => {
+    expect(nextPeriodStartISO("quarter", "2026-04-01")).toBe("2026-07-01");
+    expect(nextPeriodStartISO("quarter", "2026-10-01")).toBe("2027-01-01");
   });
 });

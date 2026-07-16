@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSession } from "next-auth/react";
 import { Screen } from "@/components/screen";
-import { Avatar, RoleBadge } from "@/components/ui";
+import { Avatar, RoleBadge, SectionLabel } from "@/components/ui";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { TeamBuilder } from "@/components/team-builder";
 import { relativeTime } from "@/lib/dates";
 
 const COLS = "min-w-[820px] grid-cols-[2fr_1fr_1.2fr_1.5fr_80px]";
@@ -328,11 +330,20 @@ function EditUserModal({
 }
 
 export default function TeamPage() {
+  const { data: session } = useSession();
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [stats, setStats] = useState<TeamStats>({ contributors: 0, administrators: 0, recipientsOnly: 0 });
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
+
+  // The builder shows editing controls only to org admins. Role isn't in the
+  // session, so find the signed-in member in the fetched list (the API
+  // enforces admin-only writes regardless).
+  const myEmail = session?.user?.email?.toLowerCase();
+  const isAdmin = teamUsers.some(
+    (u) => u.email.toLowerCase() === myEmail && u.role === "admin",
+  );
 
   const fetchTeam = useCallback(async () => {
     try {
@@ -382,7 +393,11 @@ export default function TeamPage() {
         />
       )}
 
+      {/* Team structure — the org's tree of teams, above the people list. */}
+      <TeamBuilder isAdmin={isAdmin} orgUsers={teamUsers} />
+
       <div className="mb-[18px] flex items-center">
+        <SectionLabel>People</SectionLabel>
         <div className="flex-1" />
         <button
           onClick={() => setShowInvite(true)}

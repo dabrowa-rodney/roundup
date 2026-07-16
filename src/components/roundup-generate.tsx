@@ -6,9 +6,12 @@ import { Sparkles } from "lucide-react";
 
 export function GenerateRoundupButton({
   week,
+  teamId,
   label = "Generate Roundup",
 }: {
   week: string;
+  /** Target team — omitted for the root team (the API defaults to root). */
+  teamId?: number;
   label?: string;
 }) {
   const router = useRouter();
@@ -22,7 +25,7 @@ export function GenerateRoundupButton({
       const res = await fetch("/api/roundups/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ week }),
+        body: JSON.stringify(teamId === undefined ? { week } : { week, teamId }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));

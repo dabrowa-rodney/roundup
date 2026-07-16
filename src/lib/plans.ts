@@ -3,7 +3,7 @@
 // plus the trial clock into the EFFECTIVE tier the app enforces.
 //
 // Gates are applied at the chokepoints: member invites, template creation,
-// and AI generation. Everything else works on every tier.
+// AI generation, and sub-team creation. Everything else works on every tier.
 
 export type Tier = "free" | "team" | "business";
 
@@ -12,16 +12,32 @@ export interface PlanLimits {
   maxMembers: number; // Infinity = unlimited
   maxTemplates: number;
   ai: boolean;
+  // Nested teams (sub-teams + monthly/quarterly cadences) are a Business
+  // feature (D5). Free/Team orgs stay a single root team.
+  nestedTeams: boolean;
 }
 
 export const PLAN_LIMITS: Record<Tier, PlanLimits> = {
-  free: { label: "Free", maxMembers: 3, maxTemplates: 1, ai: false },
-  team: { label: "Team", maxMembers: 25, maxTemplates: Infinity, ai: true },
+  free: {
+    label: "Free",
+    maxMembers: 3,
+    maxTemplates: 1,
+    ai: false,
+    nestedTeams: false,
+  },
+  team: {
+    label: "Team",
+    maxMembers: 25,
+    maxTemplates: Infinity,
+    ai: true,
+    nestedTeams: false,
+  },
   business: {
     label: "Business",
     maxMembers: Infinity,
     maxTemplates: Infinity,
     ai: true,
+    nestedTeams: true,
   },
 };
 

@@ -8,6 +8,7 @@ import {
   reportInstances,
   reportTemplates,
   settings,
+  teams,
   users,
 } from "@/db/schema";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
@@ -115,8 +116,9 @@ export async function GET(req: NextRequest) {
       .returning({ kind: emailLog.kind });
     if (claimed.length === 0) continue;
 
-    // Everyone in this org assigned an active report whose instance isn't
-    // submitted/locked.
+    // Everyone in this org assigned an active WEEKLY report whose instance
+    // isn't submitted/locked. Reminder slots are week-shaped, so they only
+    // apply to weekly-cadence teams — monthly/quarterly reports don't nag.
     const pending = await db
       .select({
         email: users.email,
@@ -130,6 +132,7 @@ export async function GET(req: NextRequest) {
         reportTemplates,
         eq(reportAssignees.templateId, reportTemplates.id),
       )
+      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
       .leftJoin(
         reportInstances,
         and(
@@ -142,6 +145,7 @@ export async function GET(req: NextRequest) {
         and(
           eq(reportTemplates.orgId, orgId),
           isNull(reportTemplates.archivedAt),
+          eq(teams.cadence, "weekly"),
         ),
       );
 

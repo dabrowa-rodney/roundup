@@ -14,11 +14,11 @@
 -- ── Drop legacy scaffold tables (from the original starter) ──
 DROP TABLE IF EXISTS "reports" CASCADE;
 DROP TABLE IF EXISTS "updates" CASCADE;
-DROP TABLE IF EXISTS "team_members" CASCADE;
-DROP TABLE IF EXISTS "teams" CASCADE;
 
 -- ── Drop current Roundup tables (so the script is idempotent) ──
 DROP TABLE IF EXISTS "answers" CASCADE;
+DROP TABLE IF EXISTS "team_members" CASCADE;
+DROP TABLE IF EXISTS "teams" CASCADE;
 DROP TABLE IF EXISTS "report_instances" CASCADE;
 DROP TABLE IF EXISTS "questions" CASCADE;
 DROP TABLE IF EXISTS "report_assignees" CASCADE;
@@ -43,6 +43,31 @@ CREATE TABLE "organisations" (
 	"trial_ends_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "organisations_slug_unique" UNIQUE("slug")
+);
+
+CREATE TABLE "teams" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
+	"parent_team_id" integer,
+	"name" text NOT NULL,
+	"cadence" text DEFAULT 'weekly' NOT NULL,
+	"rollup_mode" text DEFAULT 'members' NOT NULL,
+	"template_mode" text DEFAULT 'per_member' NOT NULL,
+	"archived_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+
+-- One root team per org (root = parent IS NULL).
+CREATE UNIQUE INDEX "teams_one_root_per_org"
+	ON "teams" ("org_id") WHERE "parent_team_id" IS NULL;
+
+CREATE TABLE "team_members" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"team_id" integer NOT NULL,
+	"user_id" integer NOT NULL,
+	"role" text DEFAULT 'member' NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "team_members_team_id_user_id_unique" UNIQUE("team_id","user_id")
 );
 
 CREATE TABLE "answers" (
@@ -91,6 +116,7 @@ CREATE TABLE "report_instances" (
 CREATE TABLE "report_templates" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"org_id" integer NOT NULL,
+	"team_id" integer NOT NULL,
 	"name" text NOT NULL,
 	"area" text,
 	"cadence" text DEFAULT 'weekly' NOT NULL,
@@ -110,6 +136,9 @@ CREATE TABLE "roundup_recipients" (
 CREATE TABLE "roundups" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"org_id" integer NOT NULL,
+	"team_id" integer NOT NULL,
+	"period_type" text DEFAULT 'week' NOT NULL,
+	"period_start" date NOT NULL,
 	"week_start" date NOT NULL,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"skim_json" jsonb,
@@ -117,7 +146,7 @@ CREATE TABLE "roundups" (
 	"generated_at" timestamp,
 	"sent_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "roundups_org_id_week_start_unique" UNIQUE("org_id","week_start")
+	CONSTRAINT "roundups_team_id_period_type_period_start_unique" UNIQUE("team_id","period_type","period_start")
 );
 
 CREATE TABLE "login_tokens" (
@@ -192,3 +221,10 @@ ALTER TABLE "report_instances" ADD CONSTRAINT "report_instances_org_id_organisat
 ALTER TABLE "roundups" ADD CONSTRAINT "roundups_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "email_log" ADD CONSTRAINT "email_log_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "settings" ADD CONSTRAINT "settings_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+
+ALTER TABLE "teams" ADD CONSTRAINT "teams_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "teams" ADD CONSTRAINT "teams_parent_team_id_teams_id_fk" FOREIGN KEY ("parent_team_id") REFERENCES "public"."teams"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "team_members" ADD CONSTRAINT "team_members_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "team_members" ADD CONSTRAINT "team_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "report_templates" ADD CONSTRAINT "report_templates_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "roundups" ADD CONSTRAINT "roundups_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE no action ON UPDATE no action;

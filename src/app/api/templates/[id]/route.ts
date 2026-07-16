@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { reportTemplates, reportAssignees, users } from "@/db/schema";
+import { reportTemplates, reportAssignees, teams, users } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSessionUser, type SessionUser } from "@/lib/session";
 
@@ -48,6 +48,21 @@ export async function PATCH(
   if (body.area !== undefined) updates.area = body.area?.trim() || null;
   if (body.cadence !== undefined) updates.cadence = body.cadence;
   if (body.dataSourceUrl !== undefined) updates.dataSourceUrl = body.dataSourceUrl?.trim() || null;
+  // Move the template to another team — must be an integer id owned by the
+  // caller's org (never trust a team id from the client without checking).
+  if (body.teamId !== undefined) {
+    const owned = Number.isInteger(body.teamId)
+      ? await db
+          .select({ id: teams.id })
+          .from(teams)
+          .where(and(eq(teams.id, body.teamId), eq(teams.orgId, me.orgId)))
+          .limit(1)
+      : [];
+    if (owned.length === 0) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    updates.teamId = body.teamId;
+  }
   // Archive / unarchive (reversible; nothing is ever removed by this).
   if (body.archived === true) updates.archivedAt = new Date();
   if (body.archived === false) updates.archivedAt = null;

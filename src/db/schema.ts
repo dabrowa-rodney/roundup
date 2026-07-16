@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   serial,
@@ -8,6 +9,8 @@ import {
   boolean,
   jsonb,
   unique,
+  uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /*
@@ -62,6 +65,63 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// ── Teams (self-referential tree, org-scoped) ──────────
+// The org's structure: teams nest inside teams to any depth. Every org has
+// exactly ONE root team (parent_team_id IS NULL — enforced by a partial
+// unique index) created on migration/signup, so flat orgs keep working
+// unchanged as "a one-team tree".
+//   cadence:       'weekly' | 'monthly' | 'quarterly' — the team's roundup period
+//   rollup_mode:   'members'  → summarise members' individual reports
+//                  'children' → summarise child teams' roundups + child leads' reports
+//                  'both'     → union of the two
+//   template_mode: 'shared'     → one template, every member implicitly assigned
+//                  'per_member' → explicit report_assignees (as today)
+// Cycle/depth safety is enforced on write in lib/teams.ts, not by the DB.
+export const teams = pgTable(
+  "teams",
+  {
+    id: serial("id").primaryKey(),
+    orgId: integer("org_id")
+      .notNull()
+      .references(() => organisations.id),
+    parentTeamId: integer("parent_team_id").references(
+      (): AnyPgColumn => teams.id,
+    ),
+    name: text("name").notNull(),
+    cadence: text("cadence").notNull().default("weekly"),
+    rollupMode: text("rollup_mode").notNull().default("members"),
+    templateMode: text("template_mode").notNull().default("per_member"),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // One root per org — makes root get-or-create race-safe.
+    uniqueIndex("teams_one_root_per_org")
+      .on(t.orgId)
+      .where(sql`${t.parentTeamId} IS NULL`),
+  ],
+);
+
+// ── Team ↔ member (many-to-many; role is PER TEAM) ─────
+// role: 'lead' | 'member'. A person can belong to several teams and lead one
+// while being a member of another. "Team lead" lives here — NOT on users.role
+// (which stays the org-level admin/contributor/recipient role).
+export const teamMembers = pgTable(
+  "team_members",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("member"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.teamId, t.userId)],
+);
+
 // ── Report templates ───────────────────────────────────
 // Lifecycle: active → archived (reversible, keeps everything) → deleted
 // (7-day grace, then the cron purges the template and its instances/answers).
@@ -72,6 +132,11 @@ export const reportTemplates = pgTable("report_templates", {
   orgId: integer("org_id")
     .notNull()
     .references(() => organisations.id),
+  // The owning team. A report contributes to ITS TEMPLATE'S team's roundup —
+  // multi-team membership governs roles/visibility, not report routing (D1).
+  teamId: integer("team_id")
+    .notNull()
+    .references(() => teams.id),
   name: text("name").notNull(),
   area: text("area"),
   cadence: text("cadence").notNull().default("weekly"),
@@ -156,8 +221,14 @@ export const answers = pgTable(
   (t) => [unique().on(t.instanceId, t.questionId)],
 );
 
-// ── Roundups (the generated weekly summary) ────────────
+// ── Roundups (the generated periodic summary) ──────────
 // status: 'pending' | 'draft' | 'sent'
+// ONE PER TEAM PER PERIOD — the unique key is (team_id, period_type,
+// period_start). org_id stays for tenancy scoping and cheap org-wide queries.
+// period_type: 'week' | 'month' | 'quarter'; period_start is the calendar-
+// aligned first day (Monday / 1st of month / quarter start — see lib/dates.ts).
+// week_start is a legacy mirror of period_start (kept for existing queries;
+// equals period_start for every period type).
 export const roundups = pgTable(
   "roundups",
   {
@@ -165,6 +236,11 @@ export const roundups = pgTable(
     orgId: integer("org_id")
       .notNull()
       .references(() => organisations.id),
+    teamId: integer("team_id")
+      .notNull()
+      .references(() => teams.id),
+    periodType: text("period_type").notNull().default("week"),
+    periodStart: date("period_start", { mode: "string" }).notNull(),
     weekStart: date("week_start", { mode: "string" }).notNull(),
     status: text("status").notNull().default("pending"),
     skimJson: jsonb("skim_json"),
@@ -173,7 +249,7 @@ export const roundups = pgTable(
     sentAt: timestamp("sent_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [unique().on(t.orgId, t.weekStart)],
+  (t) => [unique().on(t.teamId, t.periodType, t.periodStart)],
 );
 
 // ── Roundup ↔ recipient ────────────────────────────────

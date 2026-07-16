@@ -28,6 +28,14 @@ three roles, managed on the Team page:
 | **Contributor** | File their assigned weekly reports |
 | **Recipient** | Receives the weekly Roundup email (admins always receive it too) |
 
+**Teams inside teams (Business).** An organisation can mirror its real
+structure: teams nest to any depth, each with its own cadence (weekly /
+monthly / quarterly), members and leads. Reports roll *up* the tree — a team
+lead gets their team's roundup; their manager gets a roundup of the teams
+they manage (built from the sub-teams' roundups and/or the underlying
+reports); and so on up every level, with per-roundup recipient selection.
+Flat orgs just use the built-in root team and notice nothing.
+
 Above all organisations sits the **owner console** (`console.roundup.work`,
 gated by the `SUPER_ADMIN_EMAILS` env var): platform stats, a drill-down into
 every org (editable settings, team, activity, plan), complimentary-access
@@ -98,6 +106,7 @@ Hybrid pipeline — **code owns the facts, AI writes the prose**:
 | Members | 3 | 25 | Unlimited |
 | Templates | 1 | Unlimited | Unlimited |
 | AI Roundups | — | ✓ | ✓ |
+| Nested teams + monthly/quarterly | — | — | ✓ |
 
 Everything else (reminders, sheets, distribution, subdomain) is on every
 tier. New orgs get a card-free **14-day Team trial**. Prices are
@@ -198,5 +207,4 @@ scripts/stripe-setup.mjs  # idempotent Stripe bootstrap
 - **Per-org subdomains** (`acme.roundup.work`) — DNS + shared session cookie
   done; host-routing middleware next
 - **Custom domains** (`roundup.acme.com`) — Business tier; central-login handoff
-- **Live Stripe** — currently test mode
 - Private Google Sheets via service account

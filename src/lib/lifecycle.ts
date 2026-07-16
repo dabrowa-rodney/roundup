@@ -1,9 +1,16 @@
-// Weekly open/close lifecycle. The schedule (close/reopen day+time) is stored in
-// London wall-clock; these helpers turn a week into absolute UTC instants so we
-// can decide, at any moment, whether a week is open, closed, or upcoming.
+// Period open/close lifecycle. The schedule (close/reopen day+time) is stored in
+// London wall-clock; these helpers turn a period into absolute UTC instants so we
+// can decide, at any moment, whether it is open, closed, or upcoming.
+//
+// Weekly periods use the org schedule as ever (close Sunday 20:00 etc.).
+// Monthly/quarterly periods (per-team cadences) are calendar-aligned: they open
+// on their FIRST day at the org's openTime and close on their LAST day at the
+// org's closeTime — the day-of-week fields don't apply.
 //
 // Locking is DERIVED from this at request time (so it's correct even if the cron
-// is delayed); the cron just persists status='locked' and opens the new week.
+// is delayed); the cron just persists status='locked' and opens the new period.
+
+import { nextPeriodStartISO, parseISODate, type PeriodType } from "./dates";
 
 export interface ScheduleSettings {
   closeDay: string; // "Monday" … "Sunday"
@@ -123,5 +130,72 @@ export function isWeekOpen(
   return (
     t >= reopenInstant(weekStartISO, s).getTime() &&
     t < closeInstant(weekStartISO, s).getTime()
+  );
+}
+
+// ── Period-generalised instants (per-team cadences) ─────
+
+/** When a period opens: weekly → org reopen slot; monthly/quarterly → the
+ *  period's first calendar day at the org's openTime. */
+export function periodOpenInstant(
+  period: PeriodType,
+  periodStartISO: string,
+  s: ScheduleSettings,
+): Date {
+  if (period === "week") return reopenInstant(periodStartISO, s);
+  const d = parseISODate(periodStartISO);
+  const [hh, mm] = s.openTime.split(":").map(Number);
+  return wallClockToUtc(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate(),
+    hh || 0,
+    mm || 0,
+    s.timezone,
+  );
+}
+
+/** When a period closes: weekly → org close slot; monthly/quarterly → the
+ *  period's LAST calendar day at the org's closeTime. */
+export function periodCloseInstant(
+  period: PeriodType,
+  periodStartISO: string,
+  s: ScheduleSettings,
+): Date {
+  if (period === "week") return closeInstant(periodStartISO, s);
+  const end = parseISODate(nextPeriodStartISO(period, periodStartISO));
+  end.setUTCDate(end.getUTCDate() - 1);
+  const [hh, mm] = s.closeTime.split(":").map(Number);
+  return wallClockToUtc(
+    end.getUTCFullYear(),
+    end.getUTCMonth(),
+    end.getUTCDate(),
+    hh || 0,
+    mm || 0,
+    s.timezone,
+  );
+}
+
+/** Has this period's close time passed? */
+export function isPeriodClosed(
+  period: PeriodType,
+  periodStartISO: string,
+  s: ScheduleSettings,
+  now: Date = new Date(),
+): boolean {
+  return now.getTime() >= periodCloseInstant(period, periodStartISO, s).getTime();
+}
+
+/** Is the period currently open for editing (past open, before close)? */
+export function isPeriodOpen(
+  period: PeriodType,
+  periodStartISO: string,
+  s: ScheduleSettings,
+  now: Date = new Date(),
+): boolean {
+  const t = now.getTime();
+  return (
+    t >= periodOpenInstant(period, periodStartISO, s).getTime() &&
+    t < periodCloseInstant(period, periodStartISO, s).getTime()
   );
 }

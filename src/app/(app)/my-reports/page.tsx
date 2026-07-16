@@ -9,6 +9,7 @@ import {
   reportAssignees,
   reportInstances,
   reportTemplates,
+  teams,
   users,
 } from "@/db/schema";
 import { Screen } from "@/components/screen";
@@ -18,10 +19,12 @@ import {
   greeting,
   mondayISO,
   parseISODate,
+  periodForCadence,
+  periodLabel,
+  periodRange,
+  periodStartISO,
   relativeTime,
   weekLabel,
-  weekNumberLabel,
-  weekRange,
 } from "@/lib/dates";
 
 const STATUS_DISPLAY: Record<string, ReportStatus> = {
@@ -77,18 +80,21 @@ export default async function MyReportsPage() {
   let previous: PreviousWeek[] = [];
 
   if (me) {
-    // Templates assigned to me (non-archived)
+    // Templates assigned to me (non-archived), with their team's cadence —
+    // each template's "current" instance is keyed by ITS team's period.
     const assigned = await db
       .select({
         id: reportTemplates.id,
         name: reportTemplates.name,
         area: reportTemplates.area,
+        teamCadence: teams.cadence,
       })
       .from(reportAssignees)
       .innerJoin(
         reportTemplates,
         eq(reportAssignees.templateId, reportTemplates.id),
       )
+      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
       .where(
         and(
           eq(reportAssignees.userId, me.id),
@@ -98,6 +104,13 @@ export default async function MyReportsPage() {
       .orderBy(reportTemplates.name);
 
     const ids = assigned.map((a) => a.id);
+    const now = new Date();
+    const keyByTemplate = new Map(
+      assigned.map((a) => [
+        a.id,
+        periodStartISO(periodForCadence(a.teamCadence), now),
+      ]),
+    );
 
     if (ids.length > 0) {
       const qCounts = await db
@@ -112,7 +125,8 @@ export default async function MyReportsPage() {
         .groupBy(questions.templateId);
       const qMap = new Map(qCounts.map((q) => [q.templateId, q.count]));
 
-      // This week's instances for these templates
+      // Each template's CURRENT-period instance (period key varies by team).
+      const currentKeys = [...new Set(keyByTemplate.values())];
       const insts = await db
         .select()
         .from(reportInstances)
@@ -120,13 +134,15 @@ export default async function MyReportsPage() {
           and(
             eq(reportInstances.userId, me.id),
             inArray(reportInstances.templateId, ids),
-            eq(reportInstances.weekStart, weekIso),
+            inArray(reportInstances.weekStart, currentKeys),
           ),
         );
-      const instMap = new Map(insts.map((i) => [i.templateId, i]));
+      const instMap = new Map(
+        insts.map((i) => [`${i.templateId}:${i.weekStart}`, i]),
+      );
 
       cards = assigned.map((a) => {
-        const inst = instMap.get(a.id);
+        const inst = instMap.get(`${a.id}:${keyByTemplate.get(a.id)}`);
         const status = STATUS_DISPLAY[inst?.status ?? "not_started"] ?? "Not started";
         const submitted = status === "Submitted";
         return {
@@ -148,11 +164,13 @@ export default async function MyReportsPage() {
       });
     }
 
-    // Previous weeks: submitted / locked instances before this week
+    // Previous periods: submitted / locked instances before each template's
+    // CURRENT period (labelled by the template's own cadence).
     const prev = await db
       .select({
         templateId: reportInstances.templateId,
         name: reportTemplates.name,
+        teamCadence: teams.cadence,
         weekStart: reportInstances.weekStart,
         submittedAt: reportInstances.submittedAt,
       })
@@ -161,6 +179,7 @@ export default async function MyReportsPage() {
         reportTemplates,
         eq(reportInstances.templateId, reportTemplates.id),
       )
+      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
       .where(
         and(
           eq(reportInstances.userId, me.id),
@@ -169,19 +188,29 @@ export default async function MyReportsPage() {
         ),
       )
       .orderBy(desc(reportInstances.weekStart))
-      .limit(12);
+      .limit(24);
 
-    previous = prev.map((p) => {
-      const ws = parseISODate(p.weekStart);
-      return {
-        key: `${p.templateId}-${ws.toISOString()}`,
-        week: weekNumberLabel(ws),
-        range: weekRange(ws),
-        name: p.name,
-        when: relativeTime(p.submittedAt),
-        href: `/my-reports/${p.templateId}/submitted`,
-      };
-    });
+    previous = prev
+      .filter((p) => {
+        // A monthly/quarterly template's current-period instance has an early
+        // weekStart — keep it out of "previous" while the period is live.
+        const currentKey =
+          keyByTemplate.get(p.templateId) ??
+          periodStartISO(periodForCadence(p.teamCadence), new Date());
+        return p.weekStart < currentKey;
+      })
+      .slice(0, 12)
+      .map((p) => {
+        const period = periodForCadence(p.teamCadence);
+        return {
+          key: `${p.templateId}-${p.weekStart}`,
+          week: periodLabel(period, p.weekStart),
+          range: periodRange(period, p.weekStart),
+          name: p.name,
+          when: relativeTime(p.submittedAt),
+          href: `/my-reports/${p.templateId}/submitted`,
+        };
+      });
   }
 
   const count = cards.length;

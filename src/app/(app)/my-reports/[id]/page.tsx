@@ -8,12 +8,20 @@ import {
   reportInstances,
   reportTemplates,
   settings,
+  teams,
 } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { ReportForm } from "@/components/report-form";
-import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
-import { isWeekClosed, type ScheduleSettings } from "@/lib/lifecycle";
+import {
+  parseISODate,
+  periodForCadence,
+  periodLabel,
+  periodRange,
+  periodStartISO,
+  weekLabel,
+} from "@/lib/dates";
+import { isPeriodClosed, type ScheduleSettings } from "@/lib/lifecycle";
 
 export default async function ReportPage({
   params,
@@ -29,8 +37,13 @@ export default async function ReportPage({
 
   const template = (
     await db
-      .select()
+      .select({
+        id: reportTemplates.id,
+        name: reportTemplates.name,
+        teamCadence: teams.cadence,
+      })
       .from(reportTemplates)
+      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
       .where(
         and(
           eq(reportTemplates.id, templateId),
@@ -57,16 +70,20 @@ export default async function ReportPage({
   )[0];
   if (!assignment && me.role !== "admin") redirect("/my-reports");
 
-  const weekIso = mondayISO(new Date());
+  // The reporting period follows the template's TEAM cadence: weekly teams
+  // file weekly; monthly/quarterly teams file once per calendar period
+  // (weekStart carries the period's first day).
+  const period = periodForCadence(template.teamCadence);
+  const periodIso = periodStartISO(period, new Date());
 
-  // Get-or-create this week's instance for the current user.
+  // Get-or-create the current period's instance for the current user.
   await db
     .insert(reportInstances)
     .values({
       orgId: me.orgId,
       templateId,
       userId: me.id,
-      weekStart: weekIso,
+      weekStart: periodIso,
       status: "not_started",
       openedAt: new Date(),
     })
@@ -80,7 +97,7 @@ export default async function ReportPage({
         and(
           eq(reportInstances.templateId, templateId),
           eq(reportInstances.userId, me.id),
-          eq(reportInstances.weekStart, weekIso),
+          eq(reportInstances.weekStart, periodIso),
         ),
       )
       .limit(1)
@@ -117,13 +134,16 @@ export default async function ReportPage({
     openTime: s?.openTime ?? "01:00",
     timezone: s?.timezone ?? "Europe/London",
   };
-  const locked = instance.status === "locked" || isWeekClosed(weekIso, sched);
+  const locked =
+    instance.status === "locked" || isPeriodClosed(period, periodIso, sched);
+
+  const subtitle =
+    period === "week"
+      ? `Weekly update · ${weekLabel(parseISODate(periodIso))}`
+      : `${period === "month" ? "Monthly" : "Quarterly"} update · ${periodLabel(period, periodIso)} (${periodRange(period, periodIso)})`;
 
   return (
-    <Screen
-      title={template.name}
-      subtitle={`Weekly update · ${weekLabel(parseISODate(weekIso))}`}
-    >
+    <Screen title={template.name} subtitle={subtitle}>
       <ReportForm
         instanceId={instance.id}
         templateId={templateId}

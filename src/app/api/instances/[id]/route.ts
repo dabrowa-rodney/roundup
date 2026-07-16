@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { answers, reportInstances, settings } from "@/db/schema";
+import { answers, reportInstances, reportTemplates, settings, teams } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { isWeekClosed, type ScheduleSettings } from "@/lib/lifecycle";
+import { isPeriodClosed, type ScheduleSettings } from "@/lib/lifecycle";
+import { periodForCadence } from "@/lib/dates";
 import { getSessionUser } from "@/lib/session";
 
 // PATCH /api/instances/[id] — save answers (autosave / draft) or submit.
@@ -49,7 +50,21 @@ export async function PATCH(
     openTime: settingsRow?.openTime ?? "01:00",
     timezone: settingsRow?.timezone ?? "Europe/London",
   };
-  if (instance.status === "locked" || isWeekClosed(instance.weekStart, sched)) {
+  // The instance's period follows its template's TEAM cadence — a monthly
+  // team's report stays editable all month, not just its first week.
+  const teamRow = (
+    await db
+      .select({ cadence: teams.cadence })
+      .from(reportTemplates)
+      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
+      .where(eq(reportTemplates.id, instance.templateId))
+      .limit(1)
+  )[0];
+  const period = periodForCadence(teamRow?.cadence ?? "weekly");
+  if (
+    instance.status === "locked" ||
+    isPeriodClosed(period, instance.weekStart, sched)
+  ) {
     return NextResponse.json(
       { error: "This report is locked and can no longer be edited." },
       { status: 403 },

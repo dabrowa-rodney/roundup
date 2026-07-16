@@ -6,6 +6,7 @@ import { avatarColor } from "@/lib/avatar";
 import { emailConfigured, inviteEmail, sendEmail } from "@/lib/email";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
+import { addUserToRootTeam } from "@/lib/teams";
 
 // POST /api/users/invite — pre-create a member of the caller's org; when that
 // email signs in with Google it lands in this organisation.
@@ -74,6 +75,10 @@ export async function POST(req: NextRequest) {
       avatarColor: avatarColor(displayName),
     })
     .returning();
+
+  // New members join the org's root team (admins as leads). Sub-team
+  // placement happens in the team builder.
+  await addUserToRootTeam(me.orgId, inserted[0].id, userRole);
 
   // Tell them (best effort — the invite stands even if the email fails).
   let emailed = false;
