@@ -27,6 +27,7 @@ import {
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
 import { isSkipped } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
+import { ensureRootTeam } from "@/lib/teams";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
 
 // Allow up to 60s — the AI generation step calls Claude (with a 55s client-side
@@ -224,10 +225,18 @@ export async function POST(req: NextRequest) {
     aiKey,
   );
 
+  // Roundups are keyed per team + period. Until the team builder ships,
+  // org-wide generation targets the root team's weekly roundup — identical
+  // behaviour to the old unique(org_id, week_start) key.
+  const teamId = await ensureRootTeam(me.orgId);
+
   await db
     .insert(roundups)
     .values({
       orgId: me.orgId,
+      teamId,
+      periodType: "week",
+      periodStart: weekStart,
       weekStart,
       status: "draft",
       skimJson: content.skim,
@@ -235,7 +244,7 @@ export async function POST(req: NextRequest) {
       generatedAt: now,
     })
     .onConflictDoUpdate({
-      target: [roundups.orgId, roundups.weekStart],
+      target: [roundups.teamId, roundups.periodType, roundups.periodStart],
       set: {
         status: "draft",
         skimJson: content.skim,

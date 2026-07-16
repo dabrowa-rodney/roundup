@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { organisations, settings, users } from "@/db/schema";
 import { avatarColor } from "@/lib/avatar";
 import { slugify, slugProblem } from "@/lib/org";
+import { ensureRootTeam } from "@/lib/teams";
 
 // POST /api/orgs  { name: string, slug?: string }
 // Self-serve signup: a signed-in Google identity with NO user row yet creates
@@ -85,6 +86,9 @@ export async function POST(req: NextRequest) {
     avatarColor: avatarColor(userName || email),
     lastLoginAt: new Date(), // they're signed in right now
   });
+
+  // Every org is a team tree with one root; the founder joins it as lead.
+  await ensureRootTeam(org.id);
 
   return NextResponse.json({ ok: true, orgId: org.id, slug });
 }

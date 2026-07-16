@@ -4,6 +4,7 @@ import { reportTemplates, reportAssignees, questions, users } from "@/db/schema"
 import { and, eq, isNull, sql, asc, inArray } from "drizzle-orm";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
+import { ensureRootTeam } from "@/lib/teams";
 
 // GET /api/templates — the caller's org's templates with question counts + assignees
 export async function GET() {
@@ -110,10 +111,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
 
+  // Templates belong to a team; until the team builder ships, everything
+  // lives on the org's root team (body.teamId arrives in a later stage).
+  const teamId = await ensureRootTeam(me.orgId);
+
   const inserted = await db
     .insert(reportTemplates)
     .values({
       orgId: me.orgId,
+      teamId,
       name: name.trim(),
       area: area?.trim() || null,
       cadence: cadence || "weekly",

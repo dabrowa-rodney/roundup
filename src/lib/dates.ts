@@ -73,6 +73,71 @@ export function weekNumberLabel(monday: Date): string {
   return `Week ${isoWeek(monday)}`;
 }
 
+// ── Periods (team-cadence roundups) ─────────────────────
+// Calendar-aligned in the org timezone (D4): weeks start Monday (as above),
+// months on the 1st, quarters on 1 Jan / 1 Apr / 1 Jul / 1 Oct. period_start
+// stored as "YYYY-MM-DD", same as weekStart.
+
+export type PeriodType = "week" | "month" | "quarter";
+
+/** The team cadence values ('weekly' | ...) map onto period types. */
+export function periodForCadence(cadence: string): PeriodType {
+  return cadence === "monthly"
+    ? "month"
+    : cadence === "quarterly"
+      ? "quarter"
+      : "week";
+}
+
+/** "YYYY-MM-01" for the calendar month containing `date`. */
+export function monthStartISO(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
+/** First day of the calendar quarter containing `date` (Jan/Apr/Jul/Oct 1st). */
+export function quarterStartISO(date: Date): string {
+  const qMonth = Math.floor(date.getUTCMonth() / 3) * 3 + 1;
+  return `${date.getUTCFullYear()}-${String(qMonth).padStart(2, "0")}-01`;
+}
+
+/** Canonical period_start for a period type containing `date`. */
+export function periodStartISO(period: PeriodType, date: Date): string {
+  if (period === "month") return monthStartISO(date);
+  if (period === "quarter") return quarterStartISO(date);
+  return mondayISO(date);
+}
+
+const MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Short heading, e.g. "Week 26" / "June 2026" / "Q2 2026". */
+export function periodLabel(period: PeriodType, startISO: string): string {
+  const d = parseISODate(startISO);
+  if (period === "month")
+    return `${MONTHS_FULL[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  if (period === "quarter")
+    return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+  return weekNumberLabel(d);
+}
+
+/** Date-range subtitle, e.g. "22–28 Jun 2026" / "1–30 Jun 2026" / "Apr–Jun 2026". */
+export function periodRange(period: PeriodType, startISO: string): string {
+  const d = parseISODate(startISO);
+  if (period === "month") {
+    const days = new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    return `1–${days} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  }
+  if (period === "quarter") {
+    const endMonth = d.getUTCMonth() + 2;
+    return `${MONTHS[d.getUTCMonth()]}–${MONTHS[endMonth]} ${d.getUTCFullYear()}`;
+  }
+  return weekRange(d);
+}
+
 /** Coarse relative time, e.g. "2 min ago", "3 h ago", "yesterday". */
 export function relativeTime(date: Date | string | null | undefined): string {
   if (!date) return "";
