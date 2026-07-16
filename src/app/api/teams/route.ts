@@ -133,6 +133,14 @@ export async function POST(req: NextRequest) {
   const rollupMode = ROLLUPS.includes(body.rollupMode)
     ? body.rollupMode
     : "members";
+  // 'shared' template mode isn't implemented yet (it wouldn't materialize any
+  // report instances) — only per-member is offered.
+  if (body.templateMode === "shared") {
+    return NextResponse.json(
+      { error: "Shared templates aren't available yet" },
+      { status: 400 },
+    );
+  }
   const templateMode = TEMPLATE_MODES.includes(body.templateMode)
     ? body.templateMode
     : "per_member";

@@ -51,15 +51,36 @@ export async function PATCH(
   // Move the template to another team — must be an integer id owned by the
   // caller's org (never trust a team id from the client without checking).
   if (body.teamId !== undefined) {
-    const owned = Number.isInteger(body.teamId)
+    const dest = Number.isInteger(body.teamId)
       ? await db
-          .select({ id: teams.id })
+          .select({ id: teams.id, cadence: teams.cadence })
           .from(teams)
           .where(and(eq(teams.id, body.teamId), eq(teams.orgId, me.orgId)))
           .limit(1)
       : [];
-    if (owned.length === 0) {
+    if (dest.length === 0) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    // Report instances are keyed by their team's period. Moving to a team with
+    // a DIFFERENT cadence would leave already-filed instances stranded under
+    // the old period key (a weekly Monday vs a monthly 1st). Block it — a same-
+    // cadence move keeps the period keys aligned.
+    const current = (
+      await db
+        .select({ cadence: teams.cadence })
+        .from(reportTemplates)
+        .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
+        .where(eq(reportTemplates.id, templateId))
+        .limit(1)
+    )[0];
+    if (current && current.cadence !== dest[0].cadence) {
+      return NextResponse.json(
+        {
+          error:
+            "Move this report to a team with the same cadence — moving between weekly and monthly/quarterly teams would strand its filed reports.",
+        },
+        { status: 400 },
+      );
     }
     updates.teamId = body.teamId;
   }

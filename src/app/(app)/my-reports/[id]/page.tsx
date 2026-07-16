@@ -49,6 +49,8 @@ export default async function ReportPage({
           eq(reportTemplates.id, templateId),
           eq(reportTemplates.orgId, me.orgId),
           isNull(reportTemplates.archivedAt),
+          // Archived team → the report form is closed (its roundup can't run).
+          isNull(teams.archivedAt),
         ),
       )
       .limit(1)

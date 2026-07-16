@@ -139,6 +139,30 @@ export async function POST(req: NextRequest) {
   const periodEnd = nextPeriodStartISO(period, periodStart);
   const rollup = team.rollupMode;
 
+  // A sent roundup is final — regenerating would silently revert it to a draft
+  // (losing the "sent" state) and could re-summarise different inputs than what
+  // recipients already received. Refuse; the UI hides Regenerate once sent, so
+  // this only guards the API being hit directly.
+  const existing = (
+    await db
+      .select({ status: roundups.status })
+      .from(roundups)
+      .where(
+        and(
+          eq(roundups.teamId, team.id),
+          eq(roundups.periodType, period),
+          eq(roundups.periodStart, periodStart),
+        ),
+      )
+      .limit(1)
+  )[0];
+  if (existing?.status === "sent") {
+    return NextResponse.json(
+      { error: "This Roundup has already been sent and can't be regenerated" },
+      { status: 409 },
+    );
+  }
+
   // ── Member reports (modes: members, both; children = child leads only) ──
   // Report instances stay WEEKLY — a monthly/quarterly team aggregates every
   // submitted week inside its period window.
@@ -168,8 +192,11 @@ export async function POST(req: NextRequest) {
       and(
         eq(reportInstances.orgId, me.orgId),
         eq(reportTemplates.teamId, team.id),
-        gte(reportInstances.weekStart, periodStart),
-        lt(reportInstances.weekStart, periodEnd),
+        // Members always file at exactly the period's start key (weekly = the
+        // Monday, monthly = the 1st, …). Matching the exact key — rather than a
+        // [start, end) range — means a team whose cadence changed mid-period
+        // doesn't vacuum up stray instances from the old cadence and over-count.
+        eq(reportInstances.weekStart, periodStart),
         inArray(reportInstances.status, ["submitted", "locked"]),
       ),
     );

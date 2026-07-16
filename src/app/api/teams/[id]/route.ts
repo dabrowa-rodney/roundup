@@ -97,6 +97,13 @@ export async function PATCH(
         { status: 400 },
       );
     }
+    // 'shared' isn't implemented yet — see teams POST for the rationale.
+    if (body.templateMode === "shared") {
+      return NextResponse.json(
+        { error: "Shared templates aren't available yet" },
+        { status: 400 },
+      );
+    }
     set.templateMode = body.templateMode;
   }
 
