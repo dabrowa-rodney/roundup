@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Check } from "lucide-react";
 import { db } from "@/db";
 import {
@@ -8,12 +8,20 @@ import {
   questions,
   reportInstances,
   reportTemplates,
+  teams,
 } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { SectionLabel } from "@/components/ui";
 import { formatAnswer, parseConfig } from "@/lib/questions";
-import { mondayISO, parseISODate, weekLabel } from "@/lib/dates";
+import {
+  parseISODate,
+  periodForCadence,
+  periodLabel,
+  periodRange,
+  periodStartISO,
+  weekLabel,
+} from "@/lib/dates";
 
 export default async function SubmittedPage({
   params,
@@ -30,8 +38,13 @@ export default async function SubmittedPage({
 
   const template = (
     await db
-      .select()
+      .select({
+        id: reportTemplates.id,
+        name: reportTemplates.name,
+        teamCadence: teams.cadence,
+      })
       .from(reportTemplates)
+      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
       .where(
         and(
           eq(reportTemplates.id, templateId),
@@ -42,29 +55,34 @@ export default async function SubmittedPage({
   )[0];
   if (!template) notFound();
 
-  const weekIso = mondayISO(new Date());
-  const weekStartDate = parseISODate(weekIso);
-  const instance = (
-    await db
-      .select()
-      .from(reportInstances)
-      .where(
-        and(
-          eq(reportInstances.templateId, templateId),
-          eq(reportInstances.userId, me.id),
-          eq(reportInstances.weekStart, weekIso),
-        ),
-      )
-      .limit(1)
-  )[0];
+  // Current period first (keyed by the template's team cadence), falling back
+  // to the most recent submitted period (so "previous" links resolve).
+  const period = periodForCadence(template.teamCadence);
+  const periodIso = periodStartISO(period, new Date());
+  const candidates = await db
+    .select()
+    .from(reportInstances)
+    .where(
+      and(
+        eq(reportInstances.templateId, templateId),
+        eq(reportInstances.userId, me.id),
+        inArray(reportInstances.status, ["submitted", "locked"]),
+      ),
+    )
+    .orderBy(desc(reportInstances.weekStart))
+    .limit(12);
+  const instance =
+    candidates.find((c) => c.weekStart === periodIso) ?? candidates[0];
 
   // Only show the confirmation once submitted; otherwise send back to the form.
-  if (
-    !instance ||
-    (instance.status !== "submitted" && instance.status !== "locked")
-  ) {
+  if (!instance) {
     redirect(`/my-reports/${templateId}`);
   }
+
+  const subtitle =
+    period === "week"
+      ? weekLabel(parseISODate(instance.weekStart))
+      : `${periodLabel(period, instance.weekStart)} · ${periodRange(period, instance.weekStart)}`;
 
   const qs = await db
     .select()
@@ -87,7 +105,7 @@ export default async function SubmittedPage({
   }));
 
   return (
-    <Screen title="Report submitted" subtitle={weekLabel(weekStartDate)}>
+    <Screen title="Report submitted" subtitle={subtitle}>
       <div className="mx-auto max-w-[680px]">
         <div className="rounded-card border border-line bg-surface p-10 text-center">
           <div className="mx-auto mb-[18px] flex h-16 w-16 items-center justify-center rounded-full bg-accent-soft">
@@ -97,9 +115,8 @@ export default async function SubmittedPage({
             Report submitted
           </div>
           <p className="mt-2 text-[15px] text-muted">
-            Thanks, {firstName} — your {template.name} update for{" "}
-            {weekLabel(weekStartDate)} is in. It&apos;ll feed into this week&apos;s
-            Roundup.
+            Thanks, {firstName} — your {template.name} update for {subtitle} is
+            in. It&apos;ll feed into the next Roundup.
           </p>
           <div className="mt-[22px] flex flex-wrap justify-center gap-[11px]">
             <Link

@@ -7,11 +7,12 @@ import {
   reportInstances,
   reportTemplates,
   settings,
+  teams,
 } from "@/db/schema";
-import { mondayISO } from "@/lib/dates";
+import { mondayISO, periodForCadence, periodStartISO } from "@/lib/dates";
 import {
-  isWeekClosed,
-  reopenInstant,
+  isPeriodClosed,
+  periodOpenInstant,
   type ScheduleSettings,
 } from "@/lib/lifecycle";
 import { getSessionUser } from "@/lib/session";
@@ -51,8 +52,9 @@ function toSchedule(row: typeof settings.$inferSelect | undefined): ScheduleSett
     : DEFAULT_SCHEDULE;
 }
 
-// GET /api/cron/lifecycle — for every organisation: lock weeks past their
-// close, open the current week for all active assignees.
+// GET /api/cron/lifecycle — for every organisation, per TEAM: lock periods
+// past their close, open the current period for all active assignees. Weekly
+// teams turn over weekly; monthly/quarterly teams on calendar boundaries.
 export async function GET(req: NextRequest) {
   const orgIds = await authorisedOrgIds(req);
   if (!orgIds) {
@@ -70,70 +72,84 @@ export async function GET(req: NextRequest) {
     )[0];
     const sched = toSchedule(row);
 
-    // 1) Lock every not-yet-locked week whose close time has passed.
-    const openWeeks = await db
-      .selectDistinct({ weekStart: reportInstances.weekStart })
-      .from(reportInstances)
-      .where(
-        and(
-          eq(reportInstances.orgId, orgId),
-          ne(reportInstances.status, "locked"),
-        ),
-      );
+    const teamRows = await db
+      .select({ id: teams.id, cadence: teams.cadence })
+      .from(teams)
+      .where(and(eq(teams.orgId, orgId), isNull(teams.archivedAt)));
 
-    for (const w of openWeeks) {
-      if (isWeekClosed(w.weekStart, sched, now)) {
-        const updated = await db
-          .update(reportInstances)
-          .set({ status: "locked", updatedAt: now })
-          .where(
-            and(
-              eq(reportInstances.orgId, orgId),
-              eq(reportInstances.weekStart, w.weekStart),
-              ne(reportInstances.status, "locked"),
-            ),
-          )
-          .returning({ id: reportInstances.id });
-        locked += updated.length;
-      }
-    }
+    for (const team of teamRows) {
+      const period = periodForCadence(team.cadence);
+      const periodIso = periodStartISO(period, now);
 
-    // 2) Open the current week (once its reopen time has passed): ensure an
-    //    empty instance exists for every active assignee.
-    if (now.getTime() >= reopenInstant(weekIso, sched).getTime()) {
-      const assignees = await db
-        .select({
-          templateId: reportAssignees.templateId,
-          userId: reportAssignees.userId,
-        })
-        .from(reportAssignees)
-        .innerJoin(
-          reportTemplates,
-          eq(reportAssignees.templateId, reportTemplates.id),
-        )
+      // This team's active template ids — the unit instances hang off.
+      const templateRows = await db
+        .select({ id: reportTemplates.id })
+        .from(reportTemplates)
         .where(
           and(
-            eq(reportTemplates.orgId, orgId),
+            eq(reportTemplates.teamId, team.id),
             isNull(reportTemplates.archivedAt),
           ),
         );
+      const templateIds = templateRows.map((t) => t.id);
+      if (templateIds.length === 0) continue;
 
-      if (assignees.length > 0) {
-        const inserted = await db
-          .insert(reportInstances)
-          .values(
-            assignees.map((a) => ({
-              orgId,
-              templateId: a.templateId,
-              userId: a.userId,
-              weekStart: weekIso,
-              status: "not_started",
-              openedAt: now,
-            })),
-          )
-          .onConflictDoNothing()
-          .returning({ id: reportInstances.id });
-        created += inserted.length;
+      // 1) Lock every not-yet-locked period whose close time has passed.
+      const openPeriods = await db
+        .selectDistinct({ weekStart: reportInstances.weekStart })
+        .from(reportInstances)
+        .where(
+          and(
+            inArray(reportInstances.templateId, templateIds),
+            ne(reportInstances.status, "locked"),
+          ),
+        );
+
+      for (const w of openPeriods) {
+        if (isPeriodClosed(period, w.weekStart, sched, now)) {
+          const updated = await db
+            .update(reportInstances)
+            .set({ status: "locked", updatedAt: now })
+            .where(
+              and(
+                inArray(reportInstances.templateId, templateIds),
+                eq(reportInstances.weekStart, w.weekStart),
+                ne(reportInstances.status, "locked"),
+              ),
+            )
+            .returning({ id: reportInstances.id });
+          locked += updated.length;
+        }
+      }
+
+      // 2) Open the current period (once its open time has passed): ensure an
+      //    empty instance exists for every active assignee.
+      if (now.getTime() >= periodOpenInstant(period, periodIso, sched).getTime()) {
+        const assignees = await db
+          .select({
+            templateId: reportAssignees.templateId,
+            userId: reportAssignees.userId,
+          })
+          .from(reportAssignees)
+          .where(inArray(reportAssignees.templateId, templateIds));
+
+        if (assignees.length > 0) {
+          const inserted = await db
+            .insert(reportInstances)
+            .values(
+              assignees.map((a) => ({
+                orgId,
+                templateId: a.templateId,
+                userId: a.userId,
+                weekStart: periodIso,
+                status: "not_started",
+                openedAt: now,
+              })),
+            )
+            .onConflictDoNothing()
+            .returning({ id: reportInstances.id });
+          created += inserted.length;
+        }
       }
     }
   }
