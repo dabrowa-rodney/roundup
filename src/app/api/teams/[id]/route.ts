@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { teams } from "@/db/schema";
+import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import {
   collectSubtreeIds,
@@ -67,6 +68,19 @@ export async function PATCH(
   if (body.cadence !== undefined) {
     if (!CADENCES.includes(body.cadence)) {
       return NextResponse.json({ error: "Invalid cadence" }, { status: 400 });
+    }
+    // Plan gate: monthly/quarterly cadences ship with nested teams (D5).
+    if (body.cadence !== "weekly") {
+      const plan = await getOrgPlan(me.orgId);
+      if (!plan.limits.nestedTeams) {
+        return NextResponse.json(
+          {
+            error:
+              "Monthly and quarterly roundups are a Business feature — upgrade in Settings to switch cadence.",
+          },
+          { status: 403 },
+        );
+      }
     }
     set.cadence = body.cadence;
   }

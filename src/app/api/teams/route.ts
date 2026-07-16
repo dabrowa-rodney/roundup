@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { teamMembers, teams, users } from "@/db/schema";
+import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import {
   ensureRootTeam,
@@ -88,6 +89,17 @@ export async function POST(req: NextRequest) {
   }
   if (me.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Plan gate: nested teams are a Business feature (D5).
+  const plan = await getOrgPlan(me.orgId);
+  if (!plan.limits.nestedTeams) {
+    return NextResponse.json(
+      {
+        error: `Teams inside teams are a Business feature — upgrade in Settings to structure your organisation.`,
+      },
+      { status: 403 },
+    );
   }
 
   const body = await req.json().catch(() => ({}));

@@ -34,25 +34,58 @@ backbone of tenant isolation.
 organisations (tenant: plan, planStatus, stripeCustomerId, trialEndsAt,
                anthropicKeyEnc [AES-256-GCM])
   └─ users (role: admin | contributor | recipient; email globally unique)
-  └─ reportTemplates (soft-delete: archivedAt; deletedAt starts 7-day purge)
+  └─ teams (self-referential tree via parentTeamId; ONE root per org —
+       │    partial unique index; cadence weekly|monthly|quarterly;
+       │    rollupMode members|children|both; templateMode shared|per_member)
+       └─ teamMembers (team ↔ user; role 'lead'|'member' is PER TEAM)
+  └─ reportTemplates (belongs to a team via teamId; soft-delete: archivedAt;
+       │              deletedAt starts 7-day purge)
        └─ questions (type: rag|short_text|long_text|single_choice|
        │             multi_choice|number|file_link; config jsonb)
        └─ reportAssignees (template ↔ user)
-       └─ reportInstances (one per template×user×weekStart; status:
-            │               not_started|in_progress|submitted|locked)
+       └─ reportInstances (one per template×user×period; weekStart carries
+            │               the period's first day; status: not_started|
+            │               in_progress|submitted|locked)
             └─ answers (value jsonb, typed by question; unique per instance×question)
-  └─ roundups (status: pending|draft|sent; skimJson/fullJson; unique per org×week)
-       └─ roundupRecipients
+  └─ roundups (status: pending|draft|sent; skimJson/fullJson;
+       │       ONE PER TEAM PER PERIOD — unique(teamId, periodType,
+       │       periodStart); weekStart mirrors periodStart)
+       └─ roundupRecipients (per-roundup audience; final once sent)
   └─ settings (schedule + reminder slots; one row per org)
-  └─ emailLog (kind × weekStart idempotency ledger)
+  └─ emailLog (kind × weekStart idempotency ledger; team-scoped kinds
+               'roundup_sent:t<id>' for sub-team sends)
 loginTokens (magic-link: SHA-256 hash only, 15-min, single-use)
 ```
 
-**Conventions:** `weekStart` is always the Monday of the week as a
-`YYYY-MM-DD` string. Soft-deletes everywhere — historical answers are never
-hard-deleted so they remain context for future Roundups. A `deletedAt`
-template always also has `archivedAt` set, so `isNull(archivedAt)` queries
-exclude deleted templates by construction.
+**Conventions:** `weekStart`/`periodStart` are `YYYY-MM-DD` strings of the
+period's first day — the Monday for weeks, the 1st for calendar months, and
+Jan/Apr/Jul/Oct 1st for quarters (`src/lib/dates.ts` owns the math).
+Soft-deletes everywhere — historical answers are never hard-deleted so they
+remain context for future Roundups. A `deletedAt` template always also has
+`archivedAt` set, so `isNull(archivedAt)` queries exclude deleted templates
+by construction.
+
+### The team tree & roll-up (docs/DESIGN-nested-teams.md)
+
+Every org is a tree of teams; flat orgs are simply "a one-team tree" (the
+root team, created by migration 0007 or on signup — behaviour is unchanged
+until sub-teams exist). Reports roll UP the tree:
+
+- A report contributes to **its template's team** (D1); multi-team
+  membership governs roles/visibility, not report routing.
+- A team's roundup is generated at **its cadence** (weekly/monthly/quarterly,
+  calendar-aligned) from inputs chosen by its `rollupMode`: its members'
+  reports, its children's roundups + child leads' reports, or both.
+  A parent consumes a child's **sent** roundups for the window, falling back
+  to the latest draft (D2, `selectChildRows`).
+- **Summarise-summaries invariant:** when inputs are child roundups, facts
+  (worst-RAG dots, risks, highlights, metric cards) aggregate from the
+  children's stored JSON in `compileRoundup` — never re-derived by the
+  model. Child charts are not rolled up.
+- Tree safety lives in `src/lib/teams.ts`: `wouldCreateCycle`,
+  `MAX_TEAM_DEPTH` (8), subtree walks — the DB does not enforce acyclicity.
+- Nested teams + non-weekly cadences are **Business-tier** (D5), gated at
+  sub-team creation and cadence change.
 
 ## Subsystems
 
@@ -165,12 +198,16 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `users/invite` | POST | pre-create a member (invite) | admin |
 | `users/[id]` | PATCH/DELETE | edit role/name; remove (guards last admin) | admin |
 | `users/[id]/invite` | POST | resend invite | admin |
-| `templates` | GET/POST | list w/ counts; create | GET member / POST admin |
-| `templates/[id]` | PATCH/DELETE | update/restore; soft-delete | admin |
+| `teams` | GET/POST | org team tree w/ members; create sub-team (Business) | GET member / POST admin |
+| `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | admin |
+| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove | admin |
+| `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
+| `templates/[id]` | PATCH/DELETE | update/restore/move team; soft-delete | admin |
 | `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive | GET member / write admin |
 | `instances/[id]` | PATCH | autosave/submit answers | owner only, rejects when locked |
-| `roundups/generate` | POST | compile draft (AI + deterministic fallback) | admin, maxDuration 60 |
-| `roundups/send` | POST | publish + email recipients (one-shot) | admin, maxDuration 60 |
+| `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | admin, maxDuration 60 |
+| `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | admin, maxDuration 60 |
+| `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | admin |
 | `sheets/preview` | GET | preview a sheet's metrics | admin (docs.google.com only) |
 | `billing/checkout` | POST | Stripe Checkout URL | admin (503 if unconfigured) |
 | `billing/portal` | POST | Stripe Customer Portal | admin (needs customer) |
@@ -184,9 +221,11 @@ The core of the product: **code owns the facts, AI writes the prose.**
 ## Invariants — do not break these
 
 1. **Org/role always come from `getSessionUser()`**, never from client input.
+   Team ids from the client are always re-validated against the caller's org.
 2. **The AI never supplies numbers, RAG dots, or chart data** — only prose.
    Chart points are copied verbatim from sheet series; unknown chart labels are
-   dropped. (Enforced by `roundup-ai.test.ts`.)
+   dropped. This extends to roll-ups: parent facts aggregate from child
+   roundup JSON in code. (Enforced by `roundup-ai.test.ts` / `roundup.test.ts`.)
 3. **The AI path must stay total-fallback** — `generateRoundupAI` never throws,
    and the 55s client timeout must stay strictly under the 60s route cap. A
    broken AI path degrades silently to deterministic output, so verify the SDK

@@ -1,9 +1,11 @@
 # Design — Nested Teams & Cascading Roundups
 
-> **Status:** Draft for review. Nothing here is built yet.
-> Companion to `docs/ARCHITECTURE.md` (the current system). This proposes the
-> largest change to Roundup so far: turning a flat org into an arbitrary-depth
-> tree of teams whose reports roll *up* the hierarchy.
+> **Status:** Implemented (stages 1–6 on this branch), with one deliberate
+> exception: **D3 (team leads managing their own subtree) is not yet built** —
+> all structure/generation actions are org-admin-only for now; the per-team
+> lead role is stored and distributed to, ready for the permission expansion
+> as a follow-up. Run `drizzle/0007_teams.sql` before deploying.
+> Companion to `docs/ARCHITECTURE.md` (the current system).
 
 ## 1. Goal
 
