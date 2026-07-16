@@ -107,6 +107,20 @@ export function periodStartISO(period: PeriodType, date: Date): string {
   return mondayISO(date);
 }
 
+/** Start of the FOLLOWING period — the exclusive end of [start, next). */
+export function nextPeriodStartISO(period: PeriodType, startISO: string): string {
+  const d = parseISODate(startISO);
+  if (period === "month") {
+    return monthStartISO(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)));
+  }
+  if (period === "quarter") {
+    return quarterStartISO(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 3, 1)));
+  }
+  const next = new Date(d);
+  next.setUTCDate(next.getUTCDate() + 7);
+  return toISODate(next);
+}
+
 const MONTHS_FULL = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",

@@ -1,17 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { emailLog, roundupRecipients, roundups, users } from "@/db/schema";
+import { emailLog, roundupRecipients, roundups, teamMembers, teams, users } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import type { SkimJson } from "@/lib/roundup";
 import { emailConfigured, roundupEmail, sendEmail } from "@/lib/email";
-import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
+import { ensureRootTeam } from "@/lib/teams";
+import {
+  periodForCadence,
+  periodLabel,
+  periodRange,
+  periodStartISO,
+  type PeriodType,
+} from "@/lib/dates";
 
 export const maxDuration = 60;
 
-// POST /api/roundups/send  { week: "YYYY-MM-DD" }
-// Admin-only. Publishes a draft Roundup: records the recipient list, emails
-// everyone with the "recipient" role, and marks the roundup as sent.
+// POST /api/roundups/send  { week: "YYYY-MM-DD", teamId?: number }
+// Admin-only. Publishes a team's draft Roundup: records the recipient list,
+// emails them, and marks the roundup sent. Without teamId the org's ROOT
+// team is targeted — identical to the pre-teams behaviour.
+//
+// Recipients:
+//   root team  → org users with the "recipient" role, plus admins (as today)
+//   sub-teams  → tree-derived default: the team's leads + the parent team's
+//                leads (explicit per-roundup selection arrives with the UI)
 export async function POST(req: NextRequest) {
   const me = await getSessionUser();
   if (!me) {
@@ -26,18 +39,70 @@ export async function POST(req: NextRequest) {
   if (!(parsed instanceof Date) || isNaN(parsed.getTime())) {
     return NextResponse.json({ error: "Invalid week" }, { status: 400 });
   }
-  const weekStart = mondayISO(parsed);
+
+  // Resolve the target team — always scoped to the caller's org.
+  let team: { id: number; parentTeamId: number | null; cadence: string };
+  if (body.teamId !== undefined) {
+    const teamId = Number(body.teamId);
+    if (!Number.isInteger(teamId)) {
+      return NextResponse.json({ error: "Invalid team" }, { status: 400 });
+    }
+    const row = (
+      await db
+        .select({
+          id: teams.id,
+          parentTeamId: teams.parentTeamId,
+          cadence: teams.cadence,
+        })
+        .from(teams)
+        .where(
+          and(
+            eq(teams.id, teamId),
+            eq(teams.orgId, me.orgId),
+            isNull(teams.archivedAt),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!row) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    team = row;
+  } else {
+    const rootId = await ensureRootTeam(me.orgId);
+    const row = (
+      await db
+        .select({
+          id: teams.id,
+          parentTeamId: teams.parentTeamId,
+          cadence: teams.cadence,
+        })
+        .from(teams)
+        .where(eq(teams.id, rootId))
+        .limit(1)
+    )[0];
+    team = row;
+  }
+
+  const period: PeriodType = periodForCadence(team.cadence);
+  const periodStart = periodStartISO(period, parsed);
 
   const roundup = (
     await db
       .select()
       .from(roundups)
-      .where(and(eq(roundups.orgId, me.orgId), eq(roundups.weekStart, weekStart)))
+      .where(
+        and(
+          eq(roundups.teamId, team.id),
+          eq(roundups.periodType, period),
+          eq(roundups.periodStart, periodStart),
+        ),
+      )
       .limit(1)
   )[0];
   if (!roundup?.skimJson) {
     return NextResponse.json(
-      { error: "Generate this week's Roundup first" },
+      { error: "Generate this Roundup first" },
       { status: 409 },
     );
   }
@@ -48,14 +113,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Recipients are managed on the Team page via the "recipient" role;
-  // admins always receive the Roundup as well.
-  const recipients = await db
-    .select({ id: users.id, email: users.email })
-    .from(users)
-    .where(
-      and(eq(users.orgId, me.orgId), inArray(users.role, ["recipient", "admin"])),
+  // Resolve recipients.
+  let recipients: { id: number; email: string }[];
+  if (team.parentTeamId === null) {
+    // Root: org-wide "recipient" role plus admins — unchanged behaviour.
+    recipients = await db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(
+        and(eq(users.orgId, me.orgId), inArray(users.role, ["recipient", "admin"])),
+      );
+  } else {
+    // Sub-team: this team's leads + the parent team's leads (deduped).
+    const leadRows = await db
+      .select({ id: users.id, email: users.email })
+      .from(teamMembers)
+      .innerJoin(users, eq(teamMembers.userId, users.id))
+      .where(
+        and(
+          inArray(teamMembers.teamId, [team.id, team.parentTeamId]),
+          eq(teamMembers.role, "lead"),
+        ),
+      );
+    const seen = new Set<number>();
+    recipients = leadRows.filter((r) =>
+      seen.has(r.id) ? false : (seen.add(r.id), true),
     );
+  }
 
   const now = new Date();
 
@@ -71,11 +155,10 @@ export async function POST(req: NextRequest) {
   let emailed = 0;
   if (emailConfigured() && recipients.length > 0) {
     const skim = roundup.skimJson as SkimJson;
-    const monday = parseISODate(weekStart);
     const msg = roundupEmail({
-      weekLabel: `${weekNumberLabel(monday)} · ${weekRange(monday)}`,
-      headline: skim.headline || "This week's Roundup is ready.",
-      weekIso: weekStart,
+      weekLabel: `${periodLabel(period, periodStart)} · ${periodRange(period, periodStart)}`,
+      headline: skim.headline || "This period's Roundup is ready.",
+      weekIso: periodStart,
     });
     for (const r of recipients) {
       if (await sendEmail({ to: r.email, ...msg })) emailed++;
@@ -87,9 +170,18 @@ export async function POST(req: NextRequest) {
     .set({ status: "sent", sentAt: now })
     .where(eq(roundups.id, roundup.id));
 
+  // Root keeps the legacy idempotency key; sub-team sends log per team via a
+  // team-scoped kind (email_log is unique on org+kind+week).
+  const logKind =
+    team.parentTeamId === null ? "roundup_sent" : `roundup_sent:t${team.id}`;
   await db
     .insert(emailLog)
-    .values({ orgId: me.orgId, kind: "roundup_sent", weekStart, recipientCount: emailed })
+    .values({
+      orgId: me.orgId,
+      kind: logKind,
+      weekStart: periodStart,
+      recipientCount: emailed,
+    })
     .onConflictDoNothing();
 
   return NextResponse.json({

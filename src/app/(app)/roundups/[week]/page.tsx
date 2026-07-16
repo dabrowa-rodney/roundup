@@ -9,6 +9,7 @@ import { Screen } from "@/components/screen";
 import { RoundupViewer } from "@/components/roundup-viewer";
 import { GenerateRoundupButton } from "@/components/roundup-generate";
 import { mondayISO } from "@/lib/dates";
+import { ensureRootTeam } from "@/lib/teams";
 import type { FullJson, SkimJson } from "@/lib/roundup";
 
 export default async function RoundupViewerPage({
@@ -28,11 +29,15 @@ export default async function RoundupViewerPage({
   // have no roundup access.
   if (!me || (!isAdmin && me.role !== "recipient")) redirect("/my-reports");
 
+  // Org-level viewer: the ROOT team's weekly roundup for this week.
+  const rootTeamId = await ensureRootTeam(me.orgId);
   const roundup = (
     await db
       .select()
       .from(roundups)
-      .where(and(eq(roundups.orgId, me.orgId), eq(roundups.weekStart, weekIso)))
+      .where(
+        and(eq(roundups.teamId, rootTeamId), eq(roundups.weekStart, weekIso)),
+      )
       .limit(1)
   )[0];
 

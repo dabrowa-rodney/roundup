@@ -125,7 +125,7 @@ const NARRATIVE_SCHEMA = {
     teamLines: {
       type: "array",
       description:
-        "One tightened one-liner per contributor, keyed by their exact name.",
+        "One tightened one-liner per contributor AND per sub-team roundup, keyed by their exact name (contributor name or team name).",
       items: {
         type: "object",
         additionalProperties: false,
@@ -186,16 +186,19 @@ const NARRATIVE_SCHEMA = {
 } as const;
 
 function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
+  const children = input.childRoundups ?? [];
   const lines: string[] = [];
   lines.push(
-    `You are compiling the weekly "Roundup" — a summary of team-lead updates for the senior leadership team of an education-technology company.`,
+    `You are compiling the "Roundup" — a summary of team updates for the leadership reader above them.`,
     ``,
-    `WEEK: ${input.weekNumber} (${input.range})`,
+    `PERIOD: ${input.weekNumber} (${input.range})`,
     `REPORTS IN: ${input.reportsIn} of ${input.totalExpected}`,
     ``,
-    `CONTRIBUTOR REPORTS:`,
   );
 
+  if (input.contributors.length > 0) {
+    lines.push(`CONTRIBUTOR REPORTS:`);
+  }
   for (const c of input.contributors) {
     const rag = c.answers.find((a) => a.type === "rag");
     const ragVal = rag ? String(rag.value ?? "").trim() : "";
@@ -209,6 +212,26 @@ function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
         : String(a.value ?? "").trim();
       if (!v) continue;
       lines.push(`    • ${a.text}: ${v}${a.unit ? ` ${a.unit}` : ""}`);
+    }
+  }
+
+  // Sub-team roundups being rolled up (summarise-summaries). Only their
+  // narrative travels here — every number the parent shows is aggregated
+  // from the child JSON in code, so the model can't move a fact.
+  if (children.length > 0) {
+    lines.push(``, `SUB-TEAM ROUNDUPS (already-reviewed summaries to roll up):`);
+    for (const ch of children) {
+      lines.push(`- ${ch.teamName} (${ch.periodLabel}): ${ch.skim.headline}`);
+      if (ch.execSummary) lines.push(`    Summary: ${ch.execSummary}`);
+      for (const r of ch.skim.risks ?? []) {
+        lines.push(`    • Risk [${r.sev}] (${r.who}): ${r.text}`);
+      }
+      for (const h of ch.skim.highlights ?? []) {
+        lines.push(`    • Highlight (${h.who}): ${h.text}`);
+      }
+      for (const m of (ch.skim.metrics ?? []).slice(0, 8)) {
+        lines.push(`    • ${m.label}: ${m.value}${m.delta ? ` (${m.delta})` : ""}`);
+      }
     }
   }
 
@@ -245,13 +268,13 @@ function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
 
   lines.push(
     ``,
-    `Write the narrative for this week's Roundup. Guidance:`,
-    `- Ground every statement in the reports and metrics above — do not invent facts, numbers, or names.`,
-    `- Use each contributor's exact name in teamLines.`,
-    `- For "changes", only compare against the prior weeks shown; return an empty array if there is nothing meaningful to compare.`,
-    `- Attribute each risk and highlight to the correct area.`,
+    `Write the narrative for this period's Roundup. Guidance:`,
+    `- Ground every statement in the reports, sub-team roundups and metrics above — do not invent facts, numbers, or names.`,
+    `- Use each contributor's (or sub-team's) exact name in teamLines.`,
+    `- For "changes", only compare against the prior periods shown; return an empty array if there is nothing meaningful to compare.`,
+    `- Attribute each risk and highlight to the correct area or team.`,
     `- Charts: propose at most 3, and only where the series genuinely helps the story — a clear trend, an inflection, or a milestone crossed. Reference the series by its exact label. Mark at most one chart showInSkim. If nothing is chart-worthy, return an empty charts array.`,
-    `- Write for busy executives: direct, specific, no filler or hedging.`,
+    `- Write for busy leadership: direct, specific, no filler or hedging.`,
   );
 
   return lines.join("\n");

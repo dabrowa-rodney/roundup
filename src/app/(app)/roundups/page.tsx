@@ -12,6 +12,7 @@ import {
   settings,
 } from "@/db/schema";
 import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
+import { ensureRootTeam } from "@/lib/teams";
 
 const COLS = "min-w-[680px] grid-cols-[1.2fr_1.4fr_1fr_1fr_90px]";
 // Recipients see sent roundups only, without the ops detail.
@@ -50,12 +51,18 @@ export default async function RoundupsPage() {
 
   const weekIso = mondayISO(new Date());
 
+  // This page is the ORG-LEVEL view: the root team's weekly roundups.
+  // Sub-team roundups get their own tree/filter UI (Stage 5).
+  const rootTeamId = await ensureRootTeam(me.orgId);
+
   // Recipients: a simple reading list of everything that's been sent.
   if (!isAdmin) {
     const sentRoundups = await db
       .select({ weekStart: roundups.weekStart })
       .from(roundups)
-      .where(and(eq(roundups.orgId, me.orgId), eq(roundups.status, "sent")));
+      .where(
+        and(eq(roundups.teamId, rootTeamId), eq(roundups.status, "sent")),
+      );
     const sentWeeks = sentRoundups
       .map((r) => r.weekStart)
       .sort()
@@ -152,7 +159,7 @@ export default async function RoundupsPage() {
   const roundupRows = await db
     .select({ weekStart: roundups.weekStart, status: roundups.status })
     .from(roundups)
-    .where(eq(roundups.orgId, me.orgId));
+    .where(eq(roundups.teamId, rootTeamId));
 
   const byWeek = new Map<
     string,

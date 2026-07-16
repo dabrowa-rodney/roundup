@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compileRoundup, type CompileInput } from "./roundup";
+import {
+  compileRoundup,
+  selectChildRows,
+  worstRag,
+  type CompileInput,
+} from "./roundup";
 
 function input(partial: Partial<CompileInput> = {}): CompileInput {
   return {
@@ -123,5 +128,181 @@ describe("compileRoundup", () => {
     };
     const { skim } = compileRoundup(input({ contributors: [c] }));
     expect(skim.byTeam[0].line).toBe("Migration 70% done.");
+  });
+});
+
+// ── Roll-up: child-team roundups (summarise-summaries) ──
+
+function childSkim(partial: Partial<import("./roundup").SkimJson> = {}) {
+  return {
+    week: "Week 27",
+    range: "29 Jun–5 Jul 2026",
+    headline: "Steady week for the squad.",
+    reportsIn: "3 of 3 reports in",
+    generated: "Generated Sun 5 Jul, 20:04",
+    readTime: "",
+    risks: [],
+    changes: [],
+    highlights: [],
+    metrics: [],
+    byTeam: [],
+    ...partial,
+  };
+}
+
+describe("compileRoundup child roundups", () => {
+  it("derives each child's RAG from its worst per-team dot and counts it in the headline", () => {
+    const out = compileRoundup(
+      input({
+        contributors: [tom], // green
+        childRoundups: [
+          {
+            teamName: "Design",
+            periodLabel: "Week 27",
+            skim: childSkim({
+              byTeam: [
+                { name: "A", area: "UX", rag: "green", line: "" },
+                { name: "B", area: "UI", rag: "red", line: "" },
+              ],
+            }),
+          },
+        ],
+      }),
+    );
+    expect(out.skim.headline).toBe(
+      "1 on track and 1 needing attention this week.",
+    );
+    const design = out.skim.byTeam.find((t) => t.name === "Design");
+    expect(design?.rag).toBe("red");
+    expect(design?.area).toBe("Week 27");
+    expect(design?.line).toBe("Steady week for the squad.");
+  });
+
+  it("carries child risks and highlights through verbatim", () => {
+    const out = compileRoundup(
+      input({
+        childRoundups: [
+          {
+            teamName: "Design",
+            periodLabel: "Week 27",
+            skim: childSkim({
+              risks: [
+                { sev: "High", text: "Hiring freeze bites.", who: "UX · A" },
+              ],
+              highlights: [{ text: "New onboarding shipped.", who: "UI" }],
+            }),
+          },
+        ],
+      }),
+    );
+    expect(out.skim.risks).toEqual([
+      { sev: "High", text: "Hiring freeze bites.", who: "UX · A" },
+    ]);
+    expect(out.full.risks).toEqual([
+      { lead: "Design", text: "Hiring freeze bites." },
+    ]);
+    expect(out.skim.highlights).toEqual([
+      { text: "New onboarding shipped.", who: "UI" },
+    ]);
+  });
+
+  it("prefixes child metric labels only on collision", () => {
+    const out = compileRoundup(
+      input({
+        childRoundups: [
+          {
+            teamName: "Design",
+            periodLabel: "Week 27",
+            skim: childSkim({
+              metrics: [{ label: "Revenue", value: "£10k", delta: "", good: true }],
+            }),
+          },
+          {
+            teamName: "Sales",
+            periodLabel: "Week 27",
+            skim: childSkim({
+              metrics: [
+                { label: "Revenue", value: "£20k", delta: "", good: true },
+                { label: "Pipeline", value: "£90k", delta: "", good: true },
+              ],
+            }),
+          },
+        ],
+      }),
+    );
+    const labels = out.skim.metrics.map((m) => m.label);
+    expect(labels).toContain("Revenue"); // first team keeps the plain label
+    expect(labels).toContain("Sales: Revenue"); // collision gets the prefix
+    expect(labels).toContain("Pipeline"); // no collision, no prefix
+  });
+
+  it("does NOT roll child charts up and notes team roundups in the reports-in label", () => {
+    const out = compileRoundup(
+      input({
+        childRoundups: [
+          {
+            teamName: "Design",
+            periodLabel: "Week 27",
+            skim: childSkim({
+              charts: [
+                {
+                  title: "T",
+                  type: "line",
+                  unit: "",
+                  points: [{ x: "Jan", y: 1 }],
+                  note: "",
+                  showInSkim: true,
+                },
+              ],
+            }),
+          },
+        ],
+      }),
+    );
+    expect(out.skim.charts ?? []).toEqual([]);
+    expect(out.skim.reportsIn).toBe("2 of 3 reports in · 1 team roundup");
+  });
+});
+
+describe("worstRag / selectChildRows", () => {
+  it("worstRag ranks red > amber > green and handles empties", () => {
+    expect(
+      worstRag(
+        childSkim({
+          byTeam: [
+            { name: "A", area: "", rag: "amber", line: "" },
+            { name: "B", area: "", rag: "green", line: "" },
+          ],
+        }),
+      ),
+    ).toBe("amber");
+    expect(worstRag(childSkim())).toBe(null);
+  });
+
+  it("prefers ALL sent rows in the window, ordered by period", () => {
+    const rows = [
+      { periodStart: "2026-07-13", status: "sent" },
+      { periodStart: "2026-07-06", status: "sent" },
+      { periodStart: "2026-07-20", status: "draft" },
+    ];
+    expect(selectChildRows(rows).map((r) => r.periodStart)).toEqual([
+      "2026-07-06",
+      "2026-07-13",
+    ]);
+  });
+
+  it("falls back to the single LATEST draft when nothing is sent", () => {
+    const rows = [
+      { periodStart: "2026-07-06", status: "draft" },
+      { periodStart: "2026-07-13", status: "draft" },
+      { periodStart: "2026-07-20", status: "pending" },
+    ];
+    expect(selectChildRows(rows).map((r) => r.periodStart)).toEqual([
+      "2026-07-13",
+    ]);
+  });
+
+  it("returns nothing when there are no sent or draft rows", () => {
+    expect(selectChildRows([{ periodStart: "2026-07-06", status: "pending" }])).toEqual([]);
   });
 });

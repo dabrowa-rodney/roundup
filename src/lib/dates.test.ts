@@ -5,6 +5,7 @@ import {
   mondayISO,
   mondayOf,
   monthStartISO,
+  nextPeriodStartISO,
   parseISODate,
   periodForCadence,
   periodLabel,
@@ -154,5 +155,19 @@ describe("periodLabel / periodRange", () => {
     expect(periodRange("quarter", "2026-04-01")).toBe("Apr–Jun 2026");
     expect(periodLabel("quarter", "2026-10-01")).toBe("Q4 2026");
     expect(periodRange("quarter", "2026-10-01")).toBe("Oct–Dec 2026");
+  });
+});
+
+describe("nextPeriodStartISO", () => {
+  it("advances a week by 7 days", () => {
+    expect(nextPeriodStartISO("week", "2026-06-29")).toBe("2026-07-06");
+  });
+  it("rolls months and years", () => {
+    expect(nextPeriodStartISO("month", "2026-06-01")).toBe("2026-07-01");
+    expect(nextPeriodStartISO("month", "2026-12-01")).toBe("2027-01-01");
+  });
+  it("rolls quarters and years", () => {
+    expect(nextPeriodStartISO("quarter", "2026-04-01")).toBe("2026-07-01");
+    expect(nextPeriodStartISO("quarter", "2026-10-01")).toBe("2027-01-01");
   });
 });

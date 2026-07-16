@@ -106,13 +106,23 @@ export interface ContributorReport {
   area: string;
   answers: AnswerInput[];
 }
+/** A child team's already-generated roundup, rolled up into the parent's
+ *  (rollup_mode 'children'/'both'). Facts are AGGREGATED FROM THIS JSON —
+ *  never re-derived by the model (the summarise-summaries invariant). */
+export interface ChildRoundupInput {
+  teamName: string;
+  periodLabel: string; // the child roundup's own period, e.g. "Week 28"
+  skim: SkimJson;
+  execSummary?: string; // from the child's FullJson, for AI context
+}
 export interface CompileInput {
-  weekNumber: string; // "Week 26"
-  range: string; // "22–28 Jun 2026"
+  weekNumber: string; // period heading — "Week 26" / "June 2026" / "Q2 2026"
+  range: string; // period range — "22–28 Jun 2026" / "1–30 Jun 2026"
   reportsIn: number;
   totalExpected: number;
   generatedLabel: string; // "Generated Wed 1 Jul, 10:12"
   contributors: ContributorReport[];
+  childRoundups?: ChildRoundupInput[]; // sub-team roundups to roll up
   sheetMetrics?: MetricItem[]; // pulled from connected Google Sheets
   sheetSeries?: MetricSeries[]; // full sheet history (chart source data)
 }
@@ -149,8 +159,37 @@ function summaryLine(c: ContributorReport): string {
   return long ? truncate(strval(long.value), 200) : "No summary provided.";
 }
 
+/** Worst RAG across a child roundup's per-team dots (red > amber > green);
+ *  null when the child has no dots at all. */
+export function worstRag(skim: SkimJson): Rag | null {
+  let worst: Rag | null = null;
+  const rank: Record<Rag, number> = { green: 0, amber: 1, red: 2 };
+  for (const t of skim.byTeam ?? []) {
+    if (t.rag && (worst === null || rank[t.rag] > rank[worst])) worst = t.rag;
+  }
+  return worst;
+}
+
+/**
+ * D2: a parent consumes a child team's SENT roundups for the window, falling
+ * back to the single latest draft only when nothing was sent. Rows are one
+ * child team's roundups within the parent period (any period_starts).
+ */
+export function selectChildRows<
+  T extends { periodStart: string; status: string },
+>(rows: T[]): T[] {
+  const sent = rows.filter((r) => r.status === "sent");
+  if (sent.length > 0)
+    return [...sent].sort((a, b) => (a.periodStart < b.periodStart ? -1 : 1));
+  const drafts = rows
+    .filter((r) => r.status === "draft")
+    .sort((a, b) => (a.periodStart < b.periodStart ? -1 : 1));
+  return drafts.length > 0 ? [drafts[drafts.length - 1]] : [];
+}
+
 export function compileRoundup(input: CompileInput): RoundupContent {
   const { contributors } = input;
+  const children = input.childRoundups ?? [];
 
   let green = 0;
   let amber = 0;
@@ -200,7 +239,45 @@ export function compileRoundup(input: CompileInput): RoundupContent {
     }
   }
 
-  // Connected-sheet metrics first, then any number-answer metrics.
+  // Roll up child-team roundups (summarise-summaries). Facts aggregate from
+  // the children's stored JSON: worst RAG dot per child, their risks and
+  // highlights as filed, their metric cards. Child CHARTS are deliberately
+  // not rolled up — the parent's own connected sheets supply its charts.
+  for (const child of children) {
+    const rag = worstRag(child.skim);
+    if (rag === "green") green++;
+    else if (rag === "amber") amber++;
+    else if (rag === "red") red++;
+
+    byTeam.push({
+      name: child.teamName,
+      area: child.periodLabel,
+      rag,
+      line: child.skim.headline || "No summary available.",
+    });
+
+    for (const r of child.skim.risks ?? []) {
+      skimRisks.push(r);
+      fullRisks.push({ lead: child.teamName, text: r.text });
+    }
+    for (const h of child.skim.highlights ?? []) {
+      skimHighlights.push({ text: h.text, who: h.who || child.teamName });
+      fullHighlights.push(`${h.text} (${h.who || child.teamName})`);
+    }
+    for (const m of child.skim.metrics ?? []) {
+      // Team-prefix on label collision so two teams' "Revenue" both survive.
+      const key = `${child.teamName}:${m.label}`;
+      const collides = [...metricsMap.values()].some(
+        (x) => x.label === m.label,
+      );
+      metricsMap.set(
+        key,
+        collides ? { ...m, label: `${child.teamName}: ${m.label}` } : m,
+      );
+    }
+  }
+
+  // Connected-sheet metrics first, then answer/child metrics.
   const sheetMetrics = input.sheetMetrics ?? [];
   const metrics = [...sheetMetrics, ...metricsMap.values()];
 
@@ -218,7 +295,11 @@ export function compileRoundup(input: CompileInput): RoundupContent {
       ? capitalise(joinList(ragParts)) + " this week."
       : `${input.reportsIn} of ${input.totalExpected} reports are in for ${input.weekNumber}.`;
 
-  const reportsInLabel = `${input.reportsIn} of ${input.totalExpected} reports in`;
+  const reportsInLabel =
+    `${input.reportsIn} of ${input.totalExpected} reports in` +
+    (children.length > 0
+      ? ` · ${children.length} team roundup${children.length === 1 ? "" : "s"}`
+      : "");
 
   const skim: SkimJson = {
     week: input.weekNumber,

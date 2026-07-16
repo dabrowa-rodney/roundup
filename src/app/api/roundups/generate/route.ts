@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
@@ -11,6 +11,8 @@ import {
   reportTemplates,
   roundups,
   settings,
+  teamMembers,
+  teams,
   users,
 } from "@/db/schema";
 import { decryptSecret } from "@/lib/crypto";
@@ -18,8 +20,11 @@ import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import { emailConfigured, roundupEmail, sendEmail } from "@/lib/email";
 import {
+  selectChildRows,
   type AnswerInput,
+  type ChildRoundupInput,
   type ContributorReport,
+  type FullJson,
   type MetricItem,
   type MetricSeries,
   type SkimJson,
@@ -28,7 +33,13 @@ import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
 import { isSkipped } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
 import { ensureRootTeam } from "@/lib/teams";
-import { mondayISO, parseISODate, weekNumberLabel, weekRange } from "@/lib/dates";
+import {
+  nextPeriodStartISO,
+  periodForCadence,
+  periodLabel,
+  periodRange,
+  periodStartISO,
+} from "@/lib/dates";
 
 // Allow up to 60s — the AI generation step calls Claude (with a 55s client-side
 // timeout that falls back to the deterministic compiler before we hit this cap).
@@ -46,8 +57,15 @@ function generatedLabel(d: Date): string {
   return `Generated ${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${hh}:${mm}`;
 }
 
-// POST /api/roundups/generate  { week?: "YYYY-MM-DD" }
-// Admin-only. Compiles the week's submitted reports into a draft Roundup.
+// POST /api/roundups/generate  { week?: "YYYY-MM-DD", teamId?: number }
+// Admin-only. Compiles a team's period into a draft Roundup. Without teamId
+// the org's ROOT team is targeted — identical to the pre-teams behaviour.
+//
+// Inputs are gathered per the team's rollup_mode (see docs/DESIGN-nested-teams.md):
+//   members  → the team's own members' submitted reports in the period
+//   children → child teams' roundups (sent preferred, per D2) + reports filed
+//              by the child teams' LEADS against this team's templates
+//   both     → child roundups + ALL of this team's member reports
 export async function POST(req: NextRequest) {
   const me = await getSessionUser();
   if (!me) {
@@ -62,12 +80,79 @@ export async function POST(req: NextRequest) {
   if (isNaN(base.getTime())) {
     return NextResponse.json({ error: "Invalid week" }, { status: 400 });
   }
-  const weekStart = mondayISO(base);
 
-  // Submitted / locked instances for the week, with contributor + template.
-  const insts = await db
+  // Resolve the target team — ALWAYS scoped to the caller's org; a foreign or
+  // unknown teamId is a 404, never a cross-tenant read.
+  let team: {
+    id: number;
+    parentTeamId: number | null;
+    cadence: string;
+    rollupMode: string;
+  };
+  if (body.teamId !== undefined) {
+    const teamId = Number(body.teamId);
+    if (!Number.isInteger(teamId)) {
+      return NextResponse.json({ error: "Invalid team" }, { status: 400 });
+    }
+    const row = (
+      await db
+        .select({
+          id: teams.id,
+          parentTeamId: teams.parentTeamId,
+          cadence: teams.cadence,
+          rollupMode: teams.rollupMode,
+        })
+        .from(teams)
+        .where(
+          and(
+            eq(teams.id, teamId),
+            eq(teams.orgId, me.orgId),
+            isNull(teams.archivedAt),
+          ),
+        )
+        .limit(1)
+    )[0];
+    if (!row) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    team = row;
+  } else {
+    const rootId = await ensureRootTeam(me.orgId);
+    const row = (
+      await db
+        .select({
+          id: teams.id,
+          parentTeamId: teams.parentTeamId,
+          cadence: teams.cadence,
+          rollupMode: teams.rollupMode,
+        })
+        .from(teams)
+        .where(eq(teams.id, rootId))
+        .limit(1)
+    )[0];
+    team = row;
+  }
+
+  // The team's cadence defines the period (calendar-aligned, D4).
+  const period = periodForCadence(team.cadence);
+  const periodStart = periodStartISO(period, base);
+  const periodEnd = nextPeriodStartISO(period, periodStart);
+  const rollup = team.rollupMode;
+
+  // ── Member reports (modes: members, both; children = child leads only) ──
+  // Report instances stay WEEKLY — a monthly/quarterly team aggregates every
+  // submitted week inside its period window.
+  let insts: {
+    id: number;
+    userId: number;
+    userName: string | null;
+    userEmail: string;
+    templateName: string;
+    templateArea: string | null;
+  }[] = await db
     .select({
       id: reportInstances.id,
+      userId: reportInstances.userId,
       userName: users.name,
       userEmail: users.email,
       templateName: reportTemplates.name,
@@ -82,16 +167,94 @@ export async function POST(req: NextRequest) {
     .where(
       and(
         eq(reportInstances.orgId, me.orgId),
-        eq(reportInstances.weekStart, weekStart),
+        eq(reportTemplates.teamId, team.id),
+        gte(reportInstances.weekStart, periodStart),
+        lt(reportInstances.weekStart, periodEnd),
         inArray(reportInstances.status, ["submitted", "locked"]),
       ),
     );
 
-  // Nothing submitted → nothing to compile. Refuse rather than produce an
-  // empty Roundup (the compiler only reads submitted/locked reports).
-  if (insts.length === 0) {
+  // ── Child-team roundups (modes: children, both) ──
+  const childInputs: ChildRoundupInput[] = [];
+  let childTeamRows: { id: number; name: string }[] = [];
+  if (rollup === "children" || rollup === "both") {
+    childTeamRows = await db
+      .select({ id: teams.id, name: teams.name })
+      .from(teams)
+      .where(
+        and(
+          eq(teams.orgId, me.orgId),
+          eq(teams.parentTeamId, team.id),
+          isNull(teams.archivedAt),
+        ),
+      );
+    const childIds = childTeamRows.map((t) => t.id);
+    if (childIds.length > 0) {
+      const rows = await db
+        .select({
+          teamId: roundups.teamId,
+          periodType: roundups.periodType,
+          periodStart: roundups.periodStart,
+          status: roundups.status,
+          skimJson: roundups.skimJson,
+          fullJson: roundups.fullJson,
+        })
+        .from(roundups)
+        .where(
+          and(
+            inArray(roundups.teamId, childIds),
+            gte(roundups.periodStart, periodStart),
+            lt(roundups.periodStart, periodEnd),
+          ),
+        );
+      const nameById = new Map(childTeamRows.map((t) => [t.id, t.name]));
+      for (const childId of childIds) {
+        const mine = rows.filter(
+          (r) => r.teamId === childId && r.skimJson !== null,
+        );
+        for (const chosen of selectChildRows(mine)) {
+          childInputs.push({
+            teamName: nameById.get(childId) ?? "Team",
+            periodLabel: periodLabel(
+              chosen.periodType as "week" | "month" | "quarter",
+              chosen.periodStart,
+            ),
+            skim: chosen.skimJson as SkimJson,
+            execSummary: (chosen.fullJson as FullJson | null)?.execSummary,
+          });
+        }
+      }
+    }
+
+    // 'children' mode: member reports narrow to the child teams' leads
+    // (their upward reports); 'both' keeps every member report.
+    if (rollup === "children") {
+      if (childTeamRows.length > 0) {
+        const leadRows = await db
+          .select({ userId: teamMembers.userId })
+          .from(teamMembers)
+          .where(
+            and(
+              inArray(
+                teamMembers.teamId,
+                childTeamRows.map((t) => t.id),
+              ),
+              eq(teamMembers.role, "lead"),
+            ),
+          );
+        const leadIds = new Set(leadRows.map((r) => r.userId));
+        insts = insts.filter((i) => leadIds.has(i.userId));
+      } else {
+        insts = [];
+      }
+    }
+  }
+
+  // Nothing submitted anywhere → nothing to compile. Refuse rather than
+  // produce an empty Roundup.
+  if (insts.length === 0 && childInputs.length === 0) {
     return NextResponse.json(
-      { error: "No reports have been submitted for this week yet" },
+      { error: "No reports have been submitted for this period yet" },
       { status: 409 },
     );
   }
@@ -136,6 +299,7 @@ export async function POST(req: NextRequest) {
     answers: answersByInstance.get(i.id) ?? [],
   }));
 
+  // Expected member reports = assignees of THIS team's active templates.
   const totalExpected =
     (
       await db
@@ -148,18 +312,20 @@ export async function POST(req: NextRequest) {
         .where(
           and(
             eq(reportTemplates.orgId, me.orgId),
+            eq(reportTemplates.teamId, team.id),
             isNull(reportTemplates.archivedAt),
           ),
         )
     )[0]?.count ?? 0;
 
-  // Pull metrics from every active template's connected Google Sheet.
+  // Pull metrics from this team's active templates' connected Google Sheets.
   const srcRows = await db
     .select({ url: reportTemplates.dataSourceUrl })
     .from(reportTemplates)
     .where(
       and(
         eq(reportTemplates.orgId, me.orgId),
+        eq(reportTemplates.teamId, team.id),
         isNull(reportTemplates.archivedAt),
       ),
     );
@@ -178,21 +344,30 @@ export async function POST(req: NextRequest) {
     sheetSeries.push(...data.series);
   }
 
-  // Up to two prior weeks' Roundups, for week-over-week narrative.
+  // Up to two prior periods of this team's Roundups, for period-over-period
+  // narrative.
   const priorRows = await db
-    .select({ weekStart: roundups.weekStart, skimJson: roundups.skimJson })
+    .select({ periodStart: roundups.periodStart, skimJson: roundups.skimJson })
     .from(roundups)
-    .where(and(eq(roundups.orgId, me.orgId), lt(roundups.weekStart, weekStart)))
-    .orderBy(desc(roundups.weekStart))
+    .where(
+      and(
+        eq(roundups.teamId, team.id),
+        eq(roundups.periodType, period),
+        lt(roundups.periodStart, periodStart),
+      ),
+    )
+    .orderBy(desc(roundups.periodStart))
     .limit(2);
-  const priorWeeks: PriorWeek[] = priorRows.map((r) => {
-    const skim = r.skimJson as SkimJson;
-    return {
-      week: skim.week,
-      headline: skim.headline,
-      metrics: skim.metrics ?? [],
-    };
-  });
+  const priorWeeks: PriorWeek[] = priorRows
+    .filter((r) => r.skimJson !== null)
+    .map((r) => {
+      const skim = r.skimJson as SkimJson;
+      return {
+        week: skim.week,
+        headline: skim.headline,
+        metrics: skim.metrics ?? [],
+      };
+    });
 
   // AI is a paid-plan feature, powered by the platform's Anthropic account.
   // An org's own key (BYO) acts as an override — usage billed to them
@@ -212,12 +387,13 @@ export async function POST(req: NextRequest) {
   const now = new Date();
   const content = await generateRoundupAI(
     {
-      weekNumber: weekNumberLabel(parseISODate(weekStart)),
-      range: weekRange(parseISODate(weekStart)),
+      weekNumber: periodLabel(period, periodStart),
+      range: periodRange(period, periodStart),
       reportsIn: insts.length,
       totalExpected,
       generatedLabel: generatedLabel(now),
       contributors,
+      childRoundups: childInputs,
       sheetMetrics,
       sheetSeries,
     },
@@ -225,19 +401,14 @@ export async function POST(req: NextRequest) {
     aiKey,
   );
 
-  // Roundups are keyed per team + period. Until the team builder ships,
-  // org-wide generation targets the root team's weekly roundup — identical
-  // behaviour to the old unique(org_id, week_start) key.
-  const teamId = await ensureRootTeam(me.orgId);
-
   await db
     .insert(roundups)
     .values({
       orgId: me.orgId,
-      teamId,
-      periodType: "week",
-      periodStart: weekStart,
-      weekStart,
+      teamId: team.id,
+      periodType: period,
+      periodStart,
+      weekStart: periodStart, // legacy mirror
       status: "draft",
       skimJson: content.skim,
       fullJson: content.full,
@@ -253,9 +424,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-  // "Roundup ready" — if the Settings toggle is on, notify recipients that
-  // this week's summary has been generated (at most once per week).
-  if (emailConfigured()) {
+  // "Roundup ready" — org-wide notification, ROOT team only (sub-team
+  // distribution is per-roundup recipients, wired in the send flow).
+  if (team.parentTeamId === null && emailConfigured()) {
     const settingsRow = (
       await db
         .select({ roundupReady: settings.reminderRoundupReady })
@@ -266,7 +437,7 @@ export async function POST(req: NextRequest) {
     if (settingsRow?.roundupReady) {
       const claimed = await db
         .insert(emailLog)
-        .values({ orgId: me.orgId, kind: "roundup_ready", weekStart })
+        .values({ orgId: me.orgId, kind: "roundup_ready", weekStart: periodStart })
         .onConflictDoNothing()
         .returning({ id: emailLog.id });
       if (claimed.length > 0) {
@@ -281,9 +452,9 @@ export async function POST(req: NextRequest) {
             ),
           );
         const msg = roundupEmail({
-          weekLabel: `${weekNumberLabel(parseISODate(weekStart))} · ${weekRange(parseISODate(weekStart))}`,
+          weekLabel: `${periodLabel(period, periodStart)} · ${periodRange(period, periodStart)}`,
           headline: content.skim.headline || "This week's Roundup is ready.",
-          weekIso: weekStart,
+          weekIso: periodStart,
         });
         let emailed = 0;
         for (const r of recipients) {
@@ -297,5 +468,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, reportsIn: insts.length });
+  return NextResponse.json({
+    ok: true,
+    reportsIn: insts.length,
+    childRoundups: childInputs.length,
+  });
 }
