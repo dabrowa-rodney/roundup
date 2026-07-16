@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowLeft, Check, RefreshCw, Send } from "lucide-react";
 import { Segmented } from "./segmented";
+import { RecipientPicker } from "./recipient-picker";
 import type {
   ChartItem,
   FullJson,
@@ -14,6 +15,13 @@ import type {
 } from "@/lib/roundup";
 
 type Mode = "skim" | "full";
+type PeriodType = "week" | "month" | "quarter";
+
+const PERIOD_NOUN: Record<PeriodType, string> = {
+  week: "Weekly",
+  month: "Monthly",
+  quarter: "Quarterly",
+};
 
 const MODE_OPTIONS = [
   { value: "skim" as const, label: "Skim" },
@@ -155,7 +163,7 @@ function ChartCard({ c }: { c: ChartItem }) {
   );
 }
 
-function RegenerateButton({ week }: { week: string }) {
+function RegenerateButton({ week, teamId }: { week: string; teamId?: number }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -167,7 +175,7 @@ function RegenerateButton({ week }: { week: string }) {
       const res = await fetch("/api/roundups/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ week }),
+        body: JSON.stringify(teamId === undefined ? { week } : { week, teamId }),
       });
       if (res.ok) {
         router.refresh(); // pull the fresh skim/full into the server page
@@ -196,7 +204,15 @@ function RegenerateButton({ week }: { week: string }) {
   );
 }
 
-function SendButton({ week, initialSent }: { week: string; initialSent: boolean }) {
+function SendButton({
+  week,
+  teamId,
+  initialSent,
+}: {
+  week: string;
+  teamId?: number;
+  initialSent: boolean;
+}) {
   const [state, setState] = useState<"idle" | "sending" | "sent">(
     initialSent ? "sent" : "idle",
   );
@@ -210,7 +226,7 @@ function SendButton({ week, initialSent }: { week: string; initialSent: boolean 
       const res = await fetch("/api/roundups/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ week }),
+        body: JSON.stringify(teamId === undefined ? { week } : { week, teamId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -272,6 +288,10 @@ export function RoundupViewer({
   week,
   sent = false,
   canManage = false,
+  roundupId,
+  teamId,
+  teamName,
+  periodType = "week",
 }: {
   skim: SkimJson;
   full: FullJson;
@@ -279,13 +299,20 @@ export function RoundupViewer({
   sent?: boolean;
   /** Admins can regenerate and send; recipients just read. */
   canManage?: boolean;
+  /** DB id of the roundup row — enables the recipient picker. */
+  roundupId?: number;
+  /** Set for non-root teams only; threaded into POST bodies and links. */
+  teamId?: number;
+  /** Team context shown in the header eyebrow. */
+  teamName?: string;
+  periodType?: PeriodType;
 }) {
   const [mode, setMode] = useState<Mode>("skim");
 
   return (
     <div className="mx-auto max-w-[980px]">
       <Link
-        href="/roundups"
+        href={teamId === undefined ? "/roundups" : `/roundups?team=${teamId}`}
         className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted hover:text-accent"
       >
         <ArrowLeft size={13} /> All roundups
@@ -295,7 +322,8 @@ export function RoundupViewer({
       <div className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
         <div className="min-w-[260px] max-w-[560px]">
           <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
-            Weekly roundup · {skim.week} · {skim.range}
+            {teamName ? `${teamName} · ` : ""}
+            {PERIOD_NOUN[periodType]} roundup · {skim.week} · {skim.range}
           </div>
           <h1 className="mt-1.5 font-head text-[24px] font-bold leading-[1.25] tracking-[-0.02em] text-ink">
             {skim.headline}
@@ -307,12 +335,23 @@ export function RoundupViewer({
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} />
-          {canManage && week && !sent && <RegenerateButton week={week} />}
-          {canManage && week && <SendButton week={week} initialSent={sent} />}
+          {canManage && week && !sent && (
+            <RegenerateButton week={week} teamId={teamId} />
+          )}
+          {canManage && roundupId !== undefined && (
+            <RecipientPicker roundupId={roundupId} sent={sent} />
+          )}
+          {canManage && week && (
+            <SendButton week={week} teamId={teamId} initialSent={sent} />
+          )}
         </div>
       </div>
 
-      {mode === "skim" ? <Skim skim={skim} /> : <Full full={full} />}
+      {mode === "skim" ? (
+        <Skim skim={skim} />
+      ) : (
+        <Full full={full} periodType={periodType} />
+      )}
     </div>
   );
 }
@@ -458,11 +497,17 @@ function Skim({ skim }: { skim: SkimJson }) {
   );
 }
 
-function Full({ full }: { full: FullJson }) {
+function Full({
+  full,
+  periodType = "week",
+}: {
+  full: FullJson;
+  periodType?: PeriodType;
+}) {
   return (
     <div className="fade-up rounded-card border border-line bg-surface px-6 py-10 md:px-14 md:py-12">
       <div className="text-[12.5px] font-bold tracking-[0.06em] text-muted">
-        WEEKLY ROUNDUP
+        {PERIOD_NOUN[periodType].toUpperCase()} ROUNDUP
       </div>
       <h1 className="mb-1.5 mt-2.5 font-head text-[32px] font-bold leading-[1.15] tracking-[-0.025em]">
         {full.title}
@@ -496,7 +541,7 @@ function Full({ full }: { full: FullJson }) {
       {full.changed.length > 0 && (
         <section className="mt-7">
           <div className="font-head text-[16px] font-bold">
-            What changed since last week
+            What changed since last {periodType}
           </div>
           <ul className="ml-5 mt-2.5 list-disc text-[15px] leading-[1.7]">
             {full.changed.map((c, i) => (
