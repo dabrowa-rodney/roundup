@@ -34,6 +34,7 @@ interface UserOption {
 
 interface Template {
   id: number;
+  teamId: number;
   name: string;
   area: string | null;
   cadence: string;
@@ -42,6 +43,45 @@ interface Template {
   deletedAt: string | null;
   qCount: number;
   assignees: TemplateAssignee[];
+}
+
+interface Team {
+  id: number;
+  parentTeamId: number | null;
+  name: string;
+  cadence: string;
+  rollupMode: string;
+  templateMode: string;
+  archivedAt: string | null;
+}
+
+/** Teams in tree order: root first, then depth-first following the API's
+ *  sibling order. Orphans (broken parent links / cycles) trail at the end. */
+function orderTeams(teams: Team[]): Team[] {
+  const byParent = new Map<number | null, Team[]>();
+  for (const t of teams) {
+    const list = byParent.get(t.parentTeamId) ?? [];
+    list.push(t);
+    byParent.set(t.parentTeamId, list);
+  }
+  const out: Team[] = [];
+  const visit = (parentId: number | null) => {
+    for (const t of byParent.get(parentId) ?? []) {
+      out.push(t);
+      visit(t.id);
+    }
+  };
+  visit(null);
+  const seen = new Set(out.map((t) => t.id));
+  for (const t of teams) if (!seen.has(t.id)) out.push(t);
+  return out;
+}
+
+/** Group header / option label — sub-teams get a "Parent › Child" breadcrumb. */
+function teamLabel(team: Team, teams: Team[]): string {
+  if (team.parentTeamId === null) return team.name;
+  const parent = teams.find((t) => t.id === team.parentTeamId);
+  return parent ? `${parent.name} › ${team.name}` : team.name;
 }
 
 const PURGE_DAYS = 7;
@@ -73,19 +113,33 @@ const TYPE_LABELS: Record<string, string> = {
 
 function NewTemplateModal({
   open,
+  teams,
   onClose,
   onCreated,
 }: {
   open: boolean;
+  teams: Team[];
   onClose: () => void;
   onCreated: () => void;
 }) {
   const [name, setName] = useState("");
   const [area, setArea] = useState("");
+  // null = "not chosen yet" — falls back to the root team below.
+  const [teamId, setTeamId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   if (!open) return null;
+
+  const activeTeams = orderTeams(teams.filter((t) => !t.archivedAt));
+  const rootTeamId =
+    activeTeams.find((t) => t.parentTeamId === null)?.id ??
+    activeTeams[0]?.id ??
+    null;
+  const effectiveTeamId =
+    teamId !== null && activeTeams.some((t) => t.id === teamId)
+      ? teamId
+      : rootTeamId;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +149,11 @@ function NewTemplateModal({
       const res = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), area: area.trim() }),
+        body: JSON.stringify({
+          name: name.trim(),
+          area: area.trim(),
+          ...(effectiveTeamId !== null ? { teamId: effectiveTeamId } : {}),
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -105,6 +163,7 @@ function NewTemplateModal({
       }
       setName("");
       setArea("");
+      setTeamId(null);
       setLoading(false);
       onCreated();
       onClose();
@@ -140,6 +199,22 @@ function NewTemplateModal({
               placeholder="e.g. Weekly Update"
             />
           </div>
+          {activeTeams.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-muted mb-1">Team</label>
+              <select
+                value={effectiveTeamId ?? ""}
+                onChange={(e) => setTeamId(Number(e.target.value))}
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              >
+                {activeTeams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {teamLabel(t, teams)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {error && <p className="text-sm text-bad">{error}</p>}
           <div className="flex gap-3 justify-end pt-2">
             <button type="button" onClick={onClose} className="rounded-full border border-line px-4 py-2 text-sm font-medium text-muted hover:bg-canvas">Cancel</button>
@@ -412,6 +487,7 @@ function DeleteTemplateModal({
 
 export function ReportsManager() {
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -467,10 +543,21 @@ export function ReportsManager() {
     } catch {}
   }, []);
 
+  const fetchTeams = useCallback(async () => {
+    try {
+      const res = await fetch("/api/teams");
+      if (res.ok) {
+        const data = await res.json();
+        setTeams(data.teams);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchTemplates();
+    fetchTeams();
     fetchUsers();
-  }, [fetchTemplates, fetchUsers]);
+  }, [fetchTemplates, fetchTeams, fetchUsers]);
 
   useEffect(() => {
     if (selected !== null) {
@@ -484,6 +571,36 @@ export function ReportsManager() {
   };
 
   const selectedTemplate = templates.find((t) => t.id === selected);
+  const selectedTeam = selectedTemplate
+    ? teams.find((t) => t.id === selectedTemplate.teamId)
+    : undefined;
+
+  // Active templates grouped by team — root first, then tree order. Archived
+  // teams still come back from /api/teams, so their templates group under the
+  // team's name; a teamId the API doesn't know trails in an "Unknown" group.
+  const activeTemplates = templates.filter((t) => !t.archivedAt);
+  const teamGroups: { key: string; label: string | null; items: Template[] }[] =
+    [];
+  for (const team of orderTeams(teams)) {
+    const items = activeTemplates.filter((t) => t.teamId === team.id);
+    if (items.length > 0) {
+      teamGroups.push({
+        key: `team-${team.id}`,
+        label: teamLabel(team, teams),
+        items,
+      });
+    }
+  }
+  const knownTeamIds = new Set(teams.map((t) => t.id));
+  const orphaned = activeTemplates.filter((t) => !knownTeamIds.has(t.teamId));
+  if (orphaned.length > 0) {
+    // Until /api/teams responds there is nothing to group under — no header.
+    teamGroups.push({
+      key: "team-unknown",
+      label: teams.length > 0 ? "Unknown team" : null,
+      items: orphaned,
+    });
+  }
 
   const setArchived = async (id: number, archived: boolean) => {
     try {
@@ -604,6 +721,19 @@ export function ReportsManager() {
     } catch {}
   };
 
+  // Move the selected template to another team.
+  const handleMoveTeam = async (teamId: number) => {
+    if (!selected || !Number.isInteger(teamId)) return;
+    try {
+      await fetch(`/api/templates/${selected}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId }),
+      });
+      fetchTemplates();
+    } catch {}
+  };
+
   // Assign / unassign a user to the selected template. The API replaces the
   // full assignee set, so we send the whole next list of user ids.
   const toggleAssignee = async (userId: number) => {
@@ -634,6 +764,7 @@ export function ReportsManager() {
     <>
       <NewTemplateModal
         open={showNewTemplate}
+        teams={teams}
         onClose={() => setShowNewTemplate(false)}
         onCreated={fetchTemplates}
       />
@@ -693,45 +824,54 @@ export function ReportsManager() {
             </button>
           </div>
 
-          {templates.filter((t) => !t.archivedAt).length === 0 ? (
+          {activeTemplates.length === 0 ? (
             <div className="rounded-card border border-line bg-surface p-8 text-center text-muted">
               No report templates yet. Create one to get started!
             </div>
           ) : (
-            <div className="flex flex-col gap-2.5">
-              {templates.filter((t) => !t.archivedAt).map((r) => {
-                const active = r.id === selected;
-                return (
-                  <button
-                    key={r.id}
-                    onClick={() => selectTemplate(r.id)}
-                    className={`flex items-center gap-3.5 rounded-card border bg-surface px-[18px] py-4 text-left transition-colors ${
-                      active ? "border-accent" : "border-line hover:border-accent"
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-head text-[15px] font-bold">{r.name}</div>
-                      <div className="mt-[3px] text-[12.5px] text-muted">
-                        {r.qCount} question{r.qCount !== 1 ? "s" : ""} · {r.cadence}
-                      </div>
-                    </div>
-                    <div className="flex items-center">
-                      {r.assignees.map((a) => (
-                        <span
-                          key={a.id}
-                          className="-ml-1.5 flex h-[26px] w-[26px] items-center justify-center rounded-full border-2 border-surface text-[11px] font-bold text-white first:ml-0"
-                          style={{ background: avatarColor(a.name || a.email) }}
+            <div className="flex flex-col gap-5">
+              {teamGroups.map((g) => (
+                <div key={g.key}>
+                  {g.label && (
+                    <SectionLabel className="mb-2">{g.label}</SectionLabel>
+                  )}
+                  <div className="flex flex-col gap-2.5">
+                    {g.items.map((r) => {
+                      const active = r.id === selected;
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => selectTemplate(r.id)}
+                          className={`flex items-center gap-3.5 rounded-card border bg-surface px-[18px] py-4 text-left transition-colors ${
+                            active ? "border-accent" : "border-line hover:border-accent"
+                          }`}
                         >
-                          {initials(a.name || a.email)}
-                        </span>
-                      ))}
-                    </div>
-                    <span className={`whitespace-nowrap text-[11px] font-bold ${r.dataSourceUrl ? "text-good" : "text-muted"}`}>
-                      {r.dataSourceUrl ? "● Sheet connected" : "○ No source"}
-                    </span>
-                  </button>
-                );
-              })}
+                          <div className="min-w-0 flex-1">
+                            <div className="font-head text-[15px] font-bold">{r.name}</div>
+                            <div className="mt-[3px] text-[12.5px] text-muted">
+                              {r.qCount} question{r.qCount !== 1 ? "s" : ""} · {r.cadence}
+                            </div>
+                          </div>
+                          <div className="flex items-center">
+                            {r.assignees.map((a) => (
+                              <span
+                                key={a.id}
+                                className="-ml-1.5 flex h-[26px] w-[26px] items-center justify-center rounded-full border-2 border-surface text-[11px] font-bold text-white first:ml-0"
+                                style={{ background: avatarColor(a.name || a.email) }}
+                              >
+                                {initials(a.name || a.email)}
+                              </span>
+                            ))}
+                          </div>
+                          <span className={`whitespace-nowrap text-[11px] font-bold ${r.dataSourceUrl ? "text-good" : "text-muted"}`}>
+                            {r.dataSourceUrl ? "● Sheet connected" : "○ No source"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -838,6 +978,33 @@ export function ReportsManager() {
               placeholder="Area (e.g. Engineering) — shown on the Roundup"
               className="mb-1.5 w-full border-none bg-transparent text-[13px] font-medium text-muted outline-none placeholder:italic"
             />
+            {teams.length > 0 && (
+              <div className="mb-2.5 flex items-center gap-2">
+                <span className="text-[12px] text-muted">Team</span>
+                <select
+                  value={selectedTemplate.teamId}
+                  onChange={(e) => handleMoveTeam(Number(e.target.value))}
+                  className="min-w-0 rounded-lg border border-line bg-bg px-2.5 py-1.5 text-[12.5px] font-medium text-ink focus:border-accent focus:outline-none"
+                >
+                  {/* An archived/unknown team can't be picked, but the current
+                      value must still render — show it disabled. */}
+                  {!teams.some(
+                    (t) => t.id === selectedTemplate.teamId && !t.archivedAt,
+                  ) && (
+                    <option value={selectedTemplate.teamId} disabled>
+                      {selectedTeam
+                        ? `${teamLabel(selectedTeam, teams)} (archived)`
+                        : "Unknown team"}
+                    </option>
+                  )}
+                  {orderTeams(teams.filter((t) => !t.archivedAt)).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {teamLabel(t, teams)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="mb-[18px] flex flex-wrap items-center gap-2">
               <span className="text-[12px] text-muted">Assigned to</span>
               {selectedTemplate.assignees.length > 0 ? (
@@ -924,6 +1091,12 @@ export function ReportsManager() {
                   </>
                 )}
               </div>
+              {selectedTeam?.templateMode === "shared" && (
+                <span className="w-full text-[12px] italic leading-[1.5] text-muted">
+                  This team uses one shared report — every member is included
+                  automatically
+                </span>
+              )}
             </div>
 
             <SectionLabel className="mb-2.5 tracking-[0.05em]">Questions</SectionLabel>

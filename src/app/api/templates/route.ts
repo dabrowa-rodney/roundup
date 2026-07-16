@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { reportTemplates, reportAssignees, questions, users } from "@/db/schema";
+import { reportTemplates, reportAssignees, questions, teams, users } from "@/db/schema";
 import { and, eq, isNull, sql, asc, inArray } from "drizzle-orm";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
@@ -111,9 +111,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
 
-  // Templates belong to a team; until the team builder ships, everything
-  // lives on the org's root team (body.teamId arrives in a later stage).
-  const teamId = await ensureRootTeam(me.orgId);
+  // Templates belong to a team. An explicit body.teamId must be an integer
+  // and belong to the caller's org; absent one, default to the root team.
+  let teamId: number;
+  if (body.teamId !== undefined && body.teamId !== null) {
+    const owned = Number.isInteger(body.teamId)
+      ? await db
+          .select({ id: teams.id })
+          .from(teams)
+          .where(and(eq(teams.id, body.teamId), eq(teams.orgId, me.orgId)))
+          .limit(1)
+      : [];
+    if (owned.length === 0) {
+      return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    }
+    teamId = body.teamId;
+  } else {
+    teamId = await ensureRootTeam(me.orgId);
+  }
 
   const inserted = await db
     .insert(reportTemplates)
