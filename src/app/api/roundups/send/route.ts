@@ -113,10 +113,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Resolve recipients.
+  // Resolve recipients: an EXPLICIT per-roundup selection (set via
+  // /api/roundups/[id]/recipients) wins; otherwise tree-derived defaults.
   let recipients: { id: number; email: string }[];
-  if (team.parentTeamId === null) {
-    // Root: org-wide "recipient" role plus admins — unchanged behaviour.
+  const explicit = await db
+    .select({ id: users.id, email: users.email })
+    .from(roundupRecipients)
+    .innerJoin(users, eq(roundupRecipients.userId, users.id))
+    .where(eq(roundupRecipients.roundupId, roundup.id));
+
+  if (explicit.length > 0) {
+    recipients = explicit;
+  } else if (team.parentTeamId === null) {
+    // Root default: org-wide "recipient" role plus admins — as ever.
     recipients = await db
       .select({ id: users.id, email: users.email })
       .from(users)
@@ -124,7 +133,7 @@ export async function POST(req: NextRequest) {
         and(eq(users.orgId, me.orgId), inArray(users.role, ["recipient", "admin"])),
       );
   } else {
-    // Sub-team: this team's leads + the parent team's leads (deduped).
+    // Sub-team default: this team's leads + the parent team's leads (deduped).
     const leadRows = await db
       .select({ id: users.id, email: users.email })
       .from(teamMembers)
