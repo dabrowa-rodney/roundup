@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { reportTemplates, reportAssignees, teams, users } from "@/db/schema";
+import {
+  reportTemplates,
+  reportAssignees,
+  teamMembers,
+  teams,
+  users,
+} from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSessionUser, type SessionUser } from "@/lib/session";
 
 /** The template, only if it belongs to the caller's org. */
 async function ownedTemplate(me: SessionUser, templateId: number) {
   const rows = await db
-    .select({ id: reportTemplates.id })
+    .select({ id: reportTemplates.id, teamId: reportTemplates.teamId })
     .from(reportTemplates)
     .where(
       and(
@@ -37,7 +43,8 @@ export async function PATCH(
   if (isNaN(templateId)) {
     return NextResponse.json({ error: "Invalid template ID" }, { status: 400 });
   }
-  if (!(await ownedTemplate(me, templateId))) {
+  const template = await ownedTemplate(me, templateId);
+  if (!template) {
     return NextResponse.json({ error: "Template not found" }, { status: 404 });
   }
 
@@ -116,6 +123,45 @@ export async function PATCH(
           userId: u.id,
         }))
       );
+
+      // Assigning a report also puts the person on that report's team — the
+      // two are no longer separate. Add each assignee to the effective team
+      // (the move target if one's in this request, else the current team) as
+      // a member; onConflictDoNothing preserves an existing lead role. This is
+      // additive only — unassigning does NOT remove them from the team.
+      const effectiveTeamId =
+        typeof updates.teamId === "number" ? updates.teamId : template.teamId;
+      await db
+        .insert(teamMembers)
+        .values(
+          valid.map((u) => ({
+            teamId: effectiveTeamId,
+            userId: u.id,
+            role: "member",
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  }
+
+  // Moving a report to another team carries its existing assignees onto that
+  // team as well (if assigneeIds were also sent, they were handled above).
+  if (typeof updates.teamId === "number" && body.assigneeIds === undefined) {
+    const existing = await db
+      .select({ userId: reportAssignees.userId })
+      .from(reportAssignees)
+      .where(eq(reportAssignees.templateId, templateId));
+    if (existing.length > 0) {
+      await db
+        .insert(teamMembers)
+        .values(
+          existing.map((a) => ({
+            teamId: updates.teamId as number,
+            userId: a.userId,
+            role: "member",
+          })),
+        )
+        .onConflictDoNothing();
     }
   }
 
