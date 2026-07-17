@@ -492,6 +492,7 @@ export function ReportsManager() {
   const [users, setUsers] = useState<UserOption[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [moveError, setMoveError] = useState("");
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
@@ -724,14 +725,22 @@ export function ReportsManager() {
   // Move the selected template to another team.
   const handleMoveTeam = async (teamId: number) => {
     if (!selected || !Number.isInteger(teamId)) return;
+    setMoveError("");
     try {
-      await fetch(`/api/templates/${selected}`, {
+      const res = await fetch(`/api/templates/${selected}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMoveError(data.error || "Couldn't move this report.");
+        return;
+      }
       fetchTemplates();
-    } catch {}
+    } catch {
+      setMoveError("Couldn't move this report.");
+    }
   };
 
   // Assign / unassign a user to the selected template. The API replaces the
@@ -1004,6 +1013,9 @@ export function ReportsManager() {
                   ))}
                 </select>
               </div>
+            )}
+            {moveError && (
+              <p className="mb-2.5 text-[12.5px] text-bad">{moveError}</p>
             )}
             <div className="mb-[18px] flex flex-wrap items-center gap-2">
               <span className="text-[12px] text-muted">Assigned to</span>

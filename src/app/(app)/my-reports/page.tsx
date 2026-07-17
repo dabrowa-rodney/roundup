@@ -99,6 +99,9 @@ export default async function MyReportsPage() {
         and(
           eq(reportAssignees.userId, me.id),
           isNull(reportTemplates.archivedAt),
+          // An archived team stops accepting reports — hide its templates so
+          // members don't file into a team whose roundup can't be generated.
+          isNull(teams.archivedAt),
         ),
       )
       .orderBy(reportTemplates.name);

@@ -236,6 +236,55 @@ describe("compileRoundup child roundups", () => {
     expect(labels).toContain("Pipeline"); // no collision, no prefix
   });
 
+  it("collapses several roundups from ONE child team to a single latest representative", () => {
+    // A monthly parent rolling up a weekly child sees 3 of its roundups.
+    const out = compileRoundup(
+      input({
+        childRoundups: [
+          {
+            teamName: "Design",
+            periodLabel: "Week 23",
+            skim: childSkim({
+              headline: "Rough start.",
+              byTeam: [{ name: "A", area: "", rag: "red", line: "" }],
+              risks: [{ sev: "High", text: "Understaffed.", who: "A" }],
+            }),
+          },
+          {
+            teamName: "Design",
+            periodLabel: "Week 24",
+            skim: childSkim({
+              headline: "Steadying.",
+              byTeam: [{ name: "A", area: "", rag: "amber", line: "" }],
+              risks: [{ sev: "Medium", text: "Understaffed.", who: "A" }],
+            }),
+          },
+          {
+            teamName: "Design",
+            periodLabel: "Week 25",
+            skim: childSkim({
+              headline: "Back on track.",
+              byTeam: [{ name: "A", area: "", rag: "green", line: "" }],
+              highlights: [{ text: "Hired two designers.", who: "A" }],
+            }),
+          },
+        ],
+      }),
+    );
+    // ONE byTeam row for Design (the latest week), counted once in the tally.
+    const designRows = out.skim.byTeam.filter((t) => t.name === "Design");
+    expect(designRows).toHaveLength(1);
+    expect(designRows[0].rag).toBe("green"); // latest
+    expect(designRows[0].line).toBe("Back on track.");
+    expect(out.skim.headline).toBe("1 on track this week."); // not "3 …"
+    // Only the latest week's risks/highlights, no cross-week duplication.
+    expect(out.skim.risks).toHaveLength(0);
+    expect(out.skim.highlights).toEqual([
+      { text: "Hired two designers.", who: "A" },
+    ]);
+    expect(out.skim.reportsIn).toContain("1 team roundup");
+  });
+
   it("does NOT roll child charts up and notes team roundups in the reports-in label", () => {
     const out = compileRoundup(
       input({

@@ -145,6 +145,8 @@ export async function GET(req: NextRequest) {
         and(
           eq(reportTemplates.orgId, orgId),
           isNull(reportTemplates.archivedAt),
+          // Don't nag members of an archived team — their reports can't roll up.
+          isNull(teams.archivedAt),
           eq(teams.cadence, "weekly"),
         ),
       );

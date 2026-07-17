@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ArrowLeft, Check, RefreshCw, Send } from "lucide-react";
 import { Segmented } from "./segmented";
 import { RecipientPicker } from "./recipient-picker";
+import { ConfirmDialog } from "./confirm-dialog";
 import type {
   ChartItem,
   FullJson,
@@ -167,6 +168,7 @@ function RegenerateButton({ week, teamId }: { week: string; teamId?: number }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const regenerate = async () => {
     setLoading(true);
@@ -190,27 +192,40 @@ function RegenerateButton({ week, teamId }: { week: string; teamId?: number }) {
   };
 
   return (
-    <button
-      onClick={regenerate}
-      disabled={loading}
-      title="Rebuild this Roundup from the latest submitted reports"
-      className={`flex items-center gap-[7px] rounded-full border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-60 ${
-        error ? "text-bad" : "text-ink"
-      }`}
-    >
-      <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-      {loading ? "Regenerating…" : error ? "Failed — retry" : "Regenerate"}
-    </button>
+    <>
+      <button
+        onClick={() => setConfirming(true)}
+        disabled={loading}
+        title="Rebuild this Roundup from the latest submitted reports"
+        className={`flex items-center gap-[7px] rounded-full border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold disabled:opacity-60 ${
+          error ? "text-bad" : "text-ink"
+        }`}
+      >
+        <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+        {loading ? "Regenerating…" : error ? "Failed — retry" : "Regenerate"}
+      </button>
+      <ConfirmDialog
+        open={confirming}
+        tone="default"
+        title="Regenerate this roundup?"
+        body="This replaces the current draft with a freshly generated one — the wording you're looking at now can't be recovered. Facts (metrics, RAG, counts) are recomputed either way."
+        confirmLabel="Regenerate"
+        onConfirm={regenerate}
+        onClose={() => setConfirming(false)}
+      />
+    </>
   );
 }
 
 function SendButton({
   week,
   teamId,
+  roundupId,
   initialSent,
 }: {
   week: string;
   teamId?: number;
+  roundupId?: number;
   initialSent: boolean;
 }) {
   const [state, setState] = useState<"idle" | "sending" | "sent">(
@@ -218,6 +233,28 @@ function SendButton({
   );
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  // Resolved recipient count for the confirm dialog: null = still loading.
+  const [count, setCount] = useState<number | null>(null);
+
+  const openConfirm = async () => {
+    setConfirming(true);
+    setCount(null);
+    if (roundupId === undefined) return;
+    try {
+      const res = await fetch(`/api/roundups/${roundupId}/recipients`);
+      if (res.ok) {
+        const d = await res.json();
+        // The picker's explicit selection wins; otherwise the tree-derived
+        // default is who the send actually emails.
+        setCount(
+          (d.selected?.length ? d.selected.length : d.defaults?.length) ?? 0,
+        );
+      }
+    } catch {
+      /* leave count null — the confirm still works, just without the number */
+    }
+  };
 
   const send = async () => {
     setState("sending");
@@ -271,13 +308,41 @@ function SendButton({
         <span className="text-[12.5px] font-medium text-bad">{error}</span>
       )}
       <button
-        onClick={send}
+        onClick={openConfirm}
         disabled={state === "sending"}
         className="flex items-center gap-[7px] rounded-full bg-accent px-4 py-2.5 text-[13.5px] font-bold text-accent-ink disabled:opacity-60"
       >
         <Send size={15} />
         {state === "sending" ? "Sending…" : "Send to recipients"}
       </button>
+      <ConfirmDialog
+        open={confirming}
+        tone="default"
+        title="Send this roundup?"
+        body={
+          <>
+            {count === null ? (
+              "This emails the roundup to its recipients"
+            ) : count === 0 ? (
+              <>
+                There are <strong className="text-ink">no recipients yet</strong>
+                {" "}— sending will publish the roundup without emailing anyone
+              </>
+            ) : (
+              <>
+                This emails the roundup to{" "}
+                <strong className="text-ink">
+                  {count} recipient{count === 1 ? "" : "s"}
+                </strong>
+              </>
+            )}{" "}
+            and marks it sent. It can&apos;t be edited or unsent afterwards.
+          </>
+        }
+        confirmLabel="Send to recipients"
+        onConfirm={send}
+        onClose={() => setConfirming(false)}
+      />
     </div>
   );
 }
@@ -342,7 +407,12 @@ export function RoundupViewer({
             <RecipientPicker roundupId={roundupId} sent={sent} />
           )}
           {canManage && week && (
-            <SendButton week={week} teamId={teamId} initialSent={sent} />
+            <SendButton
+              week={week}
+              teamId={teamId}
+              roundupId={roundupId}
+              initialSent={sent}
+            />
           )}
         </div>
       </div>

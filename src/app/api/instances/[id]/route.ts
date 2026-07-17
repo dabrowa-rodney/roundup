@@ -54,12 +54,20 @@ export async function PATCH(
   // team's report stays editable all month, not just its first week.
   const teamRow = (
     await db
-      .select({ cadence: teams.cadence })
+      .select({ cadence: teams.cadence, archivedAt: teams.archivedAt })
       .from(reportTemplates)
       .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
       .where(eq(reportTemplates.id, instance.templateId))
       .limit(1)
   )[0];
+  // An archived team is closed for reporting — its roundup can't be generated,
+  // so accepting more answers would strand them.
+  if (teamRow?.archivedAt) {
+    return NextResponse.json(
+      { error: "This team has been archived — its reports are closed." },
+      { status: 403 },
+    );
+  }
   const period = periodForCadence(teamRow?.cadence ?? "weekly");
   if (
     instance.status === "locked" ||

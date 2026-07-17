@@ -239,11 +239,21 @@ export function compileRoundup(input: CompileInput): RoundupContent {
     }
   }
 
+  // Collapse multiple roundups from the SAME child team to one representative
+  // — the latest. A monthly/quarterly parent rolling up a weekly child sees
+  // ~4–5 of that child's roundups in the window; without this each would count
+  // separately, inflating the RAG tally, duplicating the child in byTeam, and
+  // repeating its risks/highlights. Inputs arrive per-team in ascending period
+  // order (see the generate route), so last-wins keeps the most recent state.
+  const childByTeam = new Map<string, ChildRoundupInput>();
+  for (const c of children) childByTeam.set(c.teamName, c);
+  const uniqueChildren = [...childByTeam.values()];
+
   // Roll up child-team roundups (summarise-summaries). Facts aggregate from
   // the children's stored JSON: worst RAG dot per child, their risks and
   // highlights as filed, their metric cards. Child CHARTS are deliberately
   // not rolled up — the parent's own connected sheets supply its charts.
-  for (const child of children) {
+  for (const child of uniqueChildren) {
     const rag = worstRag(child.skim);
     if (rag === "green") green++;
     else if (rag === "amber") amber++;
@@ -297,8 +307,8 @@ export function compileRoundup(input: CompileInput): RoundupContent {
 
   const reportsInLabel =
     `${input.reportsIn} of ${input.totalExpected} reports in` +
-    (children.length > 0
-      ? ` · ${children.length} team roundup${children.length === 1 ? "" : "s"}`
+    (uniqueChildren.length > 0
+      ? ` · ${uniqueChildren.length} team roundup${uniqueChildren.length === 1 ? "" : "s"}`
       : "");
 
   const skim: SkimJson = {

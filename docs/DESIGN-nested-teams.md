@@ -1,11 +1,56 @@
 # Design — Nested Teams & Cascading Roundups
 
-> **Status:** Implemented (stages 1–6 on this branch), with one deliberate
-> exception: **D3 (team leads managing their own subtree) is not yet built** —
-> all structure/generation actions are org-admin-only for now; the per-team
-> lead role is stored and distributed to, ready for the permission expansion
-> as a follow-up. Run `drizzle/0007_teams.sql` before deploying.
+> **Status:** Implemented (stages 1–6), then hardened by a QA review pass
+> (see "Known follow-ups" below). Run `drizzle/0007_teams.sql` before deploying.
 > Companion to `docs/ARCHITECTURE.md` (the current system).
+
+## Known follow-ups (from the post-ship QA review)
+
+These were found by an adversarial review after shipping. The listed items were
+**fixed** in the hardening pass; the rest are **deliberately deferred** with the
+reasoning recorded so they aren't lost.
+
+**Fixed:**
+- Roll-up over-count: a weekly child rolled into a monthly/quarterly parent was
+  counted once per week (RAG inflation + duplicated risks). `compileRoundup` now
+  collapses a child team's roundups in the window to its latest representative.
+- Cadence-switch over-count: generate now matches member instances on the exact
+  period-start key, not a `[start, end)` range, so stray old-cadence instances
+  aren't vacuumed in.
+- Archived-team black hole: archiving a team now closes its report-filing
+  surfaces (my-reports list + form, instance PATCH, reminders all skip archived
+  teams) so members can't file into a team whose roundup can't be generated.
+- Cross-cadence template move: blocked (would strand instances under mismatched
+  period keys); same-cadence moves are allowed.
+- Generate on a sent roundup: now 409s instead of silently reverting it to draft.
+- Send / Regenerate confirmations: both now route through `ConfirmDialog`; Send
+  shows the resolved recipient count (surfacing the zero-recipient case).
+- Cadence-change warning in the Configure modal.
+- `template_mode: 'shared'` is disabled in UI + API ("coming soon") — it was
+  never wired to materialize assignees, so a shared team would open no instances.
+
+**Deferred (with rationale):**
+- **Full `'shared'` template mode** — implement by treating a shared team's
+  members as its effective assignees in the lifecycle open step, generate's
+  `totalExpected`/instance gather, and the reminders query. Until then it's
+  disabled, and per-member (the default) is the only mode.
+- **`report_instances.teamId` snapshot** — roll-ups attribute member reports by
+  the template's *live* team, so a same-cadence template move re-attributes its
+  history. Snapshotting the team on each instance at creation would make history
+  immutable. (Cross-cadence moves are already blocked.)
+- **User-delete safety** — deleting a user can leave a team with no lead (→ a
+  sub-team send resolves to zero recipients) and cascade-deletes
+  `roundup_recipients` rows on already-*sent* roundups. Block deleting a sole
+  lead, and snapshot recipient identity on sent roundups instead of cascading.
+- **Restore semantics (F6)** — archiving parent A after independently archiving
+  child B, then restoring A, resurrects B. Track archive origin to fix.
+- **Downgrade enforcement** — a Business org that builds sub-teams then
+  downgrades keeps them (grandfathered); nothing re-checks the entitlement at
+  generate/send. This is a product/billing decision, not a bug.
+- **Dead column** — `report_templates.cadence` is unused (period derives from
+  the team's cadence); drop it or assert it mirrors the team.
+- **D3 — team leads managing their own subtree**: structure/generation actions
+  remain org-admin-only; the per-team lead role is stored and distributed to.
 
 ## 1. Goal
 

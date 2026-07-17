@@ -423,6 +423,13 @@ function ConfigureTeamModal({
             ))}
           </select>
           <p className="mt-1 text-[12.5px] text-muted">{CADENCE_HELP[cadence]}</p>
+          {cadence !== team.cadence && (
+            <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-[12.5px] text-warn-ink">
+              Changing the cadence changes this team&apos;s reporting periods.
+              Reports and roundups already in progress for the current period may
+              not carry over to the new schedule.
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-muted mb-1">
@@ -453,8 +460,10 @@ function ConfigureTeamModal({
             className={inputClass}
           >
             {(Object.keys(TEMPLATE_LABEL) as TemplateMode[]).map((m) => (
-              <option key={m} value={m}>
+              // "Shared" isn't wired up yet — offer per-member only for now.
+              <option key={m} value={m} disabled={m === "shared"}>
                 {TEMPLATE_LABEL[m]}
+                {m === "shared" ? " (coming soon)" : ""}
               </option>
             ))}
           </select>
