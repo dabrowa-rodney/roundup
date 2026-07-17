@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { users, reportAssignees, reportTemplates } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  users,
+  reportAssignees,
+  reportTemplates,
+  teamMembers,
+  teams,
+} from "@/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { getSessionUser } from "@/lib/session";
 
 // GET /api/users — the caller's org's members with their assigned report areas
@@ -43,9 +49,33 @@ export async function GET() {
     assignmentMap.set(a.userId, list);
   }
 
+  // Team memberships per user (active teams only) — the "which teams am I in"
+  // signal that report assignment does NOT provide.
+  const memberships = await db
+    .select({
+      userId: teamMembers.userId,
+      teamId: teamMembers.teamId,
+      teamName: teams.name,
+      role: teamMembers.role,
+    })
+    .from(teamMembers)
+    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+    .where(and(eq(teams.orgId, me.orgId), isNull(teams.archivedAt)));
+
+  const teamMap = new Map<
+    number,
+    { id: number; name: string; role: string }[]
+  >();
+  for (const m of memberships) {
+    const list = teamMap.get(m.userId) || [];
+    list.push({ id: m.teamId, name: m.teamName, role: m.role });
+    teamMap.set(m.userId, list);
+  }
+
   const result = allUsers.map((u) => ({
     ...u,
     areas: assignmentMap.get(u.id) || [],
+    teams: teamMap.get(u.id) || [],
   }));
 
   // Compute stats

@@ -72,7 +72,11 @@ root team, created by migration 0007 or on signup — behaviour is unchanged
 until sub-teams exist). Reports roll UP the tree:
 
 - A report contributes to **its template's team** (D1); multi-team
-  membership governs roles/visibility, not report routing.
+  membership governs roles/visibility, not report routing. Assigning a person
+  to a report also adds them to that report's team (additive — unassigning
+  doesn't remove them), so "who fills a report" and "who's on the team" stay
+  in sync. Team membership is also managed directly on the Team page (People
+  list + invite/edit picker) and in the structure tree.
 - A team's roundup is generated at **its cadence** (weekly/monthly/quarterly,
   calendar-aligned) from inputs chosen by its `rollupMode`: its members'
   reports, its children's roundups + child leads' reports, or both.

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { organisations, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { organisations, teamMembers, teams, users } from "@/db/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
 import { emailConfigured, inviteEmail, sendEmail } from "@/lib/email";
 import { getOrgPlan } from "@/lib/org-plan";
@@ -76,9 +76,38 @@ export async function POST(req: NextRequest) {
     })
     .returning();
 
-  // New members join the org's root team (admins as leads). Sub-team
-  // placement happens in the team builder.
+  // New members join the org's root team (admins as leads).
   await addUserToRootTeam(me.orgId, inserted[0].id, userRole);
+
+  // Plus any teams picked in the invite dialog (active teams in this org).
+  const rawTeamIds: unknown[] = Array.isArray(body.teamIds) ? body.teamIds : [];
+  const wantTeamIds = [
+    ...new Set(rawTeamIds.filter((v): v is number => Number.isInteger(v))),
+  ];
+  if (wantTeamIds.length > 0) {
+    const valid = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(
+        and(
+          eq(teams.orgId, me.orgId),
+          isNull(teams.archivedAt),
+          inArray(teams.id, wantTeamIds),
+        ),
+      );
+    if (valid.length > 0) {
+      await db
+        .insert(teamMembers)
+        .values(
+          valid.map((t) => ({
+            teamId: t.id,
+            userId: inserted[0].id,
+            role: "member",
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  }
 
   // Tell them (best effort — the invite stands even if the email fails).
   let emailed = false;

@@ -8,7 +8,13 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { TeamBuilder } from "@/components/team-builder";
 import { relativeTime } from "@/lib/dates";
 
-const COLS = "min-w-[820px] grid-cols-[2fr_1fr_1.2fr_1.5fr_80px]";
+const COLS = "min-w-[960px] grid-cols-[1.8fr_0.9fr_1.3fr_1.2fr_1.2fr_70px]";
+
+interface TeamMembershipLite {
+  id: number;
+  name: string;
+  role: string;
+}
 
 interface TeamUser {
   id: number;
@@ -19,6 +25,70 @@ interface TeamUser {
   avatarColor: string | null;
   lastLoginAt: string | null;
   areas: string[];
+  teams: TeamMembershipLite[];
+}
+
+interface TeamLite {
+  id: number;
+  name: string;
+  parentTeamId: number | null;
+}
+
+/** Depth-first order (root first) so the picker reads like the team tree. */
+function orderTeamsForPicker(teams: TeamLite[]): { team: TeamLite; depth: number }[] {
+  const byParent = new Map<number | null, TeamLite[]>();
+  for (const t of teams) {
+    const list = byParent.get(t.parentTeamId) ?? [];
+    list.push(t);
+    byParent.set(t.parentTeamId, list);
+  }
+  const out: { team: TeamLite; depth: number }[] = [];
+  const walk = (parentId: number | null, depth: number) => {
+    for (const t of byParent.get(parentId) ?? []) {
+      out.push({ team: t, depth });
+      walk(t.id, depth + 1);
+    }
+  };
+  // Roots first (parentTeamId null); orphans (parent archived) fall in after.
+  walk(null, 0);
+  const placed = new Set(out.map((o) => o.team.id));
+  for (const t of teams) if (!placed.has(t.id)) out.push({ team: t, depth: 0 });
+  return out;
+}
+
+/** Checkbox list of teams, tree-ordered — the shared picker used in the invite
+ *  and edit dialogs. */
+function TeamPicker({
+  allTeams,
+  selected,
+  onToggle,
+}: {
+  allTeams: TeamLite[];
+  selected: Set<number>;
+  onToggle: (teamId: number) => void;
+}) {
+  if (allTeams.length === 0) {
+    return <p className="text-[13px] text-muted">No teams yet.</p>;
+  }
+  return (
+    <div className="max-h-[190px] overflow-y-auto rounded-lg border border-line">
+      {orderTeamsForPicker(allTeams).map(({ team, depth }) => (
+        <label
+          key={team.id}
+          className="flex cursor-pointer items-center gap-2.5 border-b border-line px-3 py-2 text-sm last:border-b-0 hover:bg-canvas"
+          style={{ paddingLeft: 12 + depth * 18 }}
+        >
+          <input
+            type="checkbox"
+            checked={selected.has(team.id)}
+            onChange={() => onToggle(team.id)}
+            className="h-4 w-4 accent-accent"
+          />
+          <span className="truncate">{team.name}</span>
+        </label>
+      ))}
+    </div>
+  );
 }
 
 /** "Last signed in" cell: a time for members, invite state + resend for the rest. */
@@ -91,20 +161,31 @@ function StatCard({ label, value }: { label: string; value: number }) {
 
 function InviteModal({
   open,
+  allTeams,
   onClose,
   onInvited,
 }: {
   open: boolean;
+  allTeams: TeamLite[];
   onClose: () => void;
   onInvited: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("contributor");
+  const [teamIds, setTeamIds] = useState<Set<number>>(new Set());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   if (!open) return null;
+
+  const toggleTeam = (id: number) =>
+    setTeamIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,7 +196,12 @@ function InviteModal({
       const res = await fetch("/api/users/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), name: name.trim(), role }),
+        body: JSON.stringify({
+          email: email.trim(),
+          name: name.trim(),
+          role,
+          teamIds: [...teamIds],
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -126,6 +212,7 @@ function InviteModal({
       setEmail("");
       setName("");
       setRole("contributor");
+      setTeamIds(new Set());
       setLoading(false);
       onInvited();
       onClose();
@@ -173,6 +260,19 @@ function InviteModal({
               <option value="recipient">Recipient</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Teams
+            </label>
+            <TeamPicker
+              allTeams={allTeams}
+              selected={teamIds}
+              onToggle={toggleTeam}
+            />
+            <p className="mt-1 text-[12px] text-muted">
+              Which teams this person belongs to. You can change this any time.
+            </p>
+          </div>
           {error && (
             <p className="text-sm text-bad bg-red-tint rounded-lg px-3 py-2">{error}</p>
           )}
@@ -200,18 +300,31 @@ function InviteModal({
 
 function EditUserModal({
   user,
+  allTeams,
   onClose,
   onUpdated,
 }: {
   user: TeamUser;
+  allTeams: TeamLite[];
   onClose: () => void;
   onUpdated: () => void;
 }) {
   const [name, setName] = useState(user.name || "");
   const [role, setRole] = useState(user.role);
+  const [teamIds, setTeamIds] = useState<Set<number>>(
+    new Set(user.teams.map((t) => t.id)),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
+
+  const toggleTeam = (id: number) =>
+    setTeamIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const handleSave = async () => {
     setLoading(true);
@@ -225,6 +338,18 @@ function EditUserModal({
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to update");
+        setLoading(false);
+        return;
+      }
+      // Reconcile team membership in one call.
+      const teamRes = await fetch(`/api/users/${user.id}/teams`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamIds: [...teamIds] }),
+      });
+      if (!teamRes.ok) {
+        const td = await teamRes.json().catch(() => ({}));
+        setError(td.error || "Saved the member, but couldn't update their teams.");
         setLoading(false);
         return;
       }
@@ -282,6 +407,20 @@ function EditUserModal({
               <option value="recipient">Recipient</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Teams
+            </label>
+            <TeamPicker
+              allTeams={allTeams}
+              selected={teamIds}
+              onToggle={toggleTeam}
+            />
+            <p className="mt-1 text-[12px] text-muted">
+              Tick every team this person is part of. Lead roles are set in the
+              team structure above.
+            </p>
+          </div>
           {error && (
             <p className="text-sm text-bad bg-red-tint rounded-lg px-3 py-2">{error}</p>
           )}
@@ -291,7 +430,7 @@ function EditUserModal({
               disabled={loading}
               className="text-sm font-medium text-bad hover:underline disabled:opacity-40"
             >
-              Remove from team
+              Remove from org
             </button>
             <div className="flex gap-3">
               <button
@@ -313,15 +452,16 @@ function EditUserModal({
       </div>
       <ConfirmDialog
         open={confirmRemove}
-        title="Remove from team?"
+        title="Remove from the organisation?"
         body={
           <>
             <strong className="text-ink">{user.name || user.email}</strong>{" "}
-            will lose access to this workspace. Any reports assigned to them
-            stay, but you&apos;ll need to reassign them.
+            will lose access to this workspace and be removed from every team.
+            Any reports assigned to them stay, but you&apos;ll need to reassign
+            them.
           </>
         }
-        confirmLabel="Remove from team"
+        confirmLabel="Remove from org"
         onConfirm={handleDelete}
         onClose={() => setConfirmRemove(false)}
       />
@@ -333,6 +473,7 @@ export default function TeamPage() {
   const { data: session } = useSession();
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [stats, setStats] = useState<TeamStats>({ contributors: 0, administrators: 0, recipientsOnly: 0 });
+  const [allTeams, setAllTeams] = useState<TeamLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
@@ -347,11 +488,27 @@ export default function TeamPage() {
 
   const fetchTeam = useCallback(async () => {
     try {
-      const res = await fetch("/api/users");
-      if (res.ok) {
-        const data = await res.json();
+      const [usersRes, teamsRes] = await Promise.all([
+        fetch("/api/users"),
+        fetch("/api/teams"),
+      ]);
+      if (usersRes.ok) {
+        const data = await usersRes.json();
         setTeamUsers(data.users);
         setStats(data.stats);
+      }
+      if (teamsRes.ok) {
+        const data = await teamsRes.json();
+        // Active teams only — the picker offers places people can actually go.
+        setAllTeams(
+          (data.teams as (TeamLite & { archivedAt: string | null })[])
+            .filter((t) => !t.archivedAt)
+            .map((t) => ({
+              id: t.id,
+              name: t.name,
+              parentTeamId: t.parentTeamId,
+            })),
+        );
       }
     } catch {
       // silently fail
@@ -382,12 +539,14 @@ export default function TeamPage() {
     <Screen title="Team" subtitle="People and permissions">
       <InviteModal
         open={showInvite}
+        allTeams={allTeams}
         onClose={() => setShowInvite(false)}
         onInvited={fetchTeam}
       />
       {editingUser && (
         <EditUserModal
           user={editingUser}
+          allTeams={allTeams}
           onClose={() => setEditingUser(null)}
           onUpdated={fetchTeam}
         />
@@ -418,6 +577,7 @@ export default function TeamPage() {
           >
             <span>MEMBER</span>
             <span>ROLE</span>
+            <span>TEAMS</span>
             <span>ASSIGNED REPORT</span>
             <span>LAST SIGNED IN</span>
             <span />
@@ -436,6 +596,26 @@ export default function TeamPage() {
               </div>
               <span>
                 <RoleBadge role={roleLabel(u.role)} />
+              </span>
+              <span className="flex flex-wrap gap-1">
+                {u.teams.length > 0 ? (
+                  u.teams.map((t) => (
+                    <span
+                      key={t.id}
+                      className={`whitespace-nowrap rounded-md px-2 py-0.5 text-[11.5px] font-semibold ${
+                        t.role === "lead"
+                          ? "bg-accent-soft text-accent"
+                          : "bg-line/50 text-muted"
+                      }`}
+                      title={t.role === "lead" ? "Lead" : "Member"}
+                    >
+                      {t.name}
+                      {t.role === "lead" ? " · Lead" : ""}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[13.5px] text-muted">—</span>
+                )}
               </span>
               <span className="text-[13.5px] text-ink">
                 {u.areas.length > 0 ? u.areas.join(", ") : "—"}
