@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectSubtreeIds,
   childTeams,
+  diffTeamMembership,
   teamDepth,
   teamPath,
   wouldCreateCycle,
@@ -88,5 +89,24 @@ describe("teamPath", () => {
   });
   it("is just the node for a root", () => {
     expect(teamPath(TREE, 1).map((t) => t.id)).toEqual([1]);
+  });
+});
+
+describe("diffTeamMembership", () => {
+  it("adds newly-selected teams and removes deselected ones", () => {
+    expect(diffTeamMembership([1, 2], [2, 3])).toEqual({
+      add: [3],
+      remove: [1],
+    });
+  });
+  it("leaves unchanged teams alone (preserves an existing role)", () => {
+    expect(diffTeamMembership([1, 2, 3], [1, 2, 3])).toEqual({
+      add: [],
+      remove: [],
+    });
+  });
+  it("handles adding to an empty set and clearing to empty", () => {
+    expect(diffTeamMembership([], [5, 6])).toEqual({ add: [5, 6], remove: [] });
+    expect(diffTeamMembership([5, 6], [])).toEqual({ add: [], remove: [5, 6] });
   });
 });

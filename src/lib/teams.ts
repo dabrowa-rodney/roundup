@@ -85,6 +85,21 @@ export function teamDepth(nodes: TeamNode[], teamId: number): number {
   return depth;
 }
 
+/** Set-diff for reconciling a user's team membership against a desired set —
+ *  which team ids to add, which to remove. Ids present in both are left as-is
+ *  (so an existing lead role is preserved). */
+export function diffTeamMembership(
+  current: number[],
+  desired: number[],
+): { add: number[]; remove: number[] } {
+  const cur = new Set(current);
+  const des = new Set(desired);
+  return {
+    add: desired.filter((id) => !cur.has(id)),
+    remove: current.filter((id) => !des.has(id)),
+  };
+}
+
 /** Path from the root down to `teamId` (inclusive) — breadcrumb order. */
 export function teamPath<T extends TeamNode>(nodes: T[], teamId: number): T[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
