@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, isNull, lt, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   organisations,
@@ -173,6 +173,23 @@ export async function GET(req: NextRequest) {
     await db.delete(reportTemplates).where(eq(reportTemplates.id, t.id));
   }
 
+  // Expired time-limited complimentary grants → back to Free. resolvePlan
+  // already treats them as free at request time; this keeps the stored plan
+  // and the console honest (a permanent grant has complimentary_until IS NULL
+  // and is never touched).
+  const expiredComp = await db
+    .update(organisations)
+    .set({ plan: "free", complimentaryUntil: null })
+    .where(
+      and(
+        inArray(organisations.id, orgIds),
+        eq(organisations.plan, "complimentary"),
+        isNotNull(organisations.complimentaryUntil),
+        lt(organisations.complimentaryUntil, now),
+      ),
+    )
+    .returning({ id: organisations.id });
+
   return NextResponse.json({
     ok: true,
     week: weekIso,
@@ -180,5 +197,6 @@ export async function GET(req: NextRequest) {
     locked,
     created,
     purged: purgeable.length,
+    compExpired: expiredComp.length,
   });
 }

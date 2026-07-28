@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Check, CreditCard, Sparkles } from "lucide-react";
 
 interface BillingInfo {
@@ -9,6 +9,7 @@ interface BillingInfo {
   paidPlan: string;
   planStatus: string | null;
   isComplimentary: boolean;
+  complimentaryUntil: string | null;
   isTrial: boolean;
   trialDaysLeft: number;
   hasStripeCustomer: boolean;
@@ -36,29 +37,56 @@ const TIERS = [
   },
 ];
 
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** "14 Jan 2027" from an ISO string (UTC calendar day). */
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 /** Billing card for the Settings page: current plan + upgrade / manage. */
 export function BillingCard() {
   const [info, setInfo] = useState<BillingInfo | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("/api/org")
+  // Redeem-a-code box state.
+  const [code, setCode] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [redeemError, setRedeemError] = useState("");
+  const [redeemNote, setRedeemNote] = useState("");
+
+  const loadInfo = useCallback(() => {
+    return fetch("/api/org")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d?.org?.billing && setInfo(d.org.billing))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadInfo();
+  }, [loadInfo]);
 
   if (!info) return null;
 
   const go = async (path: string, body?: unknown, busyKey = path) => {
     setBusy(busyKey);
     setError("");
+    // Pre-apply a redeemed discount code at checkout (not on the portal call).
+    const finalBody =
+      path === "/api/billing/checkout" && promoCode
+        ? { ...(body as Record<string, unknown>), promoCode }
+        : body;
     try {
       const res = await fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
+        body: finalBody ? JSON.stringify(finalBody) : undefined,
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok && d.url) {
@@ -72,7 +100,39 @@ export function BillingCard() {
     setBusy(null);
   };
 
+  const apply = async () => {
+    const value = code.trim();
+    if (!value) return;
+    setBusy("redeem");
+    setRedeemError("");
+    setRedeemNote("");
+    try {
+      const res = await fetch("/api/billing/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: value }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRedeemError(d.error || "That code isn't valid.");
+      } else if (d.kind === "complimentary") {
+        setRedeemNote(d.message || "Complimentary access unlocked.");
+        setCode("");
+        await loadInfo();
+      } else if (d.kind === "discount") {
+        setPromoCode(d.code);
+        setCode("");
+        setRedeemNote("Discount applied — pick a plan below.");
+      }
+    } catch {
+      setRedeemError("Something went wrong — try again.");
+    }
+    setBusy(null);
+  };
+
   const paidActive = info.paidPlan === "team" || info.paidPlan === "business";
+  const permanentComplimentary = info.isComplimentary && !info.complimentaryUntil;
+  const showRedeem = !permanentComplimentary;
 
   return (
     <div className="mb-4 rounded-card border border-line bg-surface px-[26px] py-6">
@@ -98,7 +158,9 @@ export function BillingCard() {
         )}
         {info.isComplimentary && (
           <span className="text-[13px] text-muted">
-            Full access, on the house.
+            {info.complimentaryUntil
+              ? `Complimentary until ${formatDate(info.complimentaryUntil)}`
+              : "Full access, on the house."}
           </span>
         )}
         {info.paidPlan === "team" || info.paidPlan === "business" ? (
@@ -161,10 +223,48 @@ export function BillingCard() {
           <p className="text-[12px] text-muted sm:col-span-2">
             <Sparkles size={12} className="mr-1 inline" />
             Prices shown in GBP; USD is applied automatically at checkout for
-            non-UK cards. Discount code? Enter it on the payment page.
+            non-UK cards. Have a discount or complimentary code? Enter it above.
           </p>
         </div>
       )}
+
+      {/* Redeem a code */}
+      {showRedeem && (
+        <div className="mt-5 border-t border-line pt-4">
+          <label
+            htmlFor="redeem-code"
+            className="text-[12.5px] font-semibold text-muted"
+          >
+            Have a code?
+          </label>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            <input
+              id="redeem-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") apply();
+              }}
+              placeholder="Redeem a code"
+              className="min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 py-2 text-[13.5px] text-ink placeholder:text-muted"
+            />
+            <button
+              onClick={apply}
+              disabled={busy !== null || !code.trim()}
+              className="rounded-full bg-accent px-4 py-2 text-[12.5px] font-bold text-accent-ink disabled:opacity-50"
+            >
+              {busy === "redeem" ? "Applying…" : "Apply"}
+            </button>
+          </div>
+          {redeemError && (
+            <p className="mt-2 text-[13px] font-medium text-bad">{redeemError}</p>
+          )}
+          {redeemNote && (
+            <p className="mt-2 text-[13px] font-medium text-good">{redeemNote}</p>
+          )}
+        </div>
+      )}
+
       {error && (
         <p className="mt-2.5 text-[13px] font-medium text-bad">{error}</p>
       )}

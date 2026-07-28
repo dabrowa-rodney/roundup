@@ -42,6 +42,10 @@ export const organisations = pgTable("organisations", {
   planStatus: text("plan_status"),
   stripeCustomerId: text("stripe_customer_id"),
   trialEndsAt: timestamp("trial_ends_at"),
+  // When a complimentary grant ends. Null with plan='complimentary' = a
+  // permanent grant (owner console); a timestamp = time-limited (redeemed
+  // code), after which resolvePlan treats the org as free. See lib/plans.ts.
+  complimentaryUntil: timestamp("complimentary_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -299,6 +303,22 @@ export const emailLog = pgTable(
   },
   (t) => [unique().on(t.orgId, t.kind, t.weekStart)],
 );
+
+// ── Complimentary codes (owner-minted free-access codes) ──
+// Redeemed in-app on Settings → Plan & billing. Unlike discount codes (which
+// live in Stripe), these are Roundup-internal: redeeming grants the org
+// complimentary access for `months` months (organisations.complimentaryUntil).
+// active/expiresAt/maxRedemptions gate whether a code can still be redeemed.
+export const complimentaryCodes = pgTable("complimentary_codes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(), // stored upper-case
+  months: integer("months").notNull(), // length of the free-access grant
+  maxRedemptions: integer("max_redemptions"), // null = unlimited
+  timesRedeemed: integer("times_redeemed").notNull().default(0),
+  expiresAt: timestamp("expires_at"), // the code's own redemption deadline
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 // ── Org settings (one row per organisation) ────────────
 export const settings = pgTable("settings", {

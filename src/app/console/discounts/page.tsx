@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { authOptions } from "@/lib/auth";
 import { isSuperAdmin } from "@/lib/super-admin";
 import { DiscountsManager } from "@/components/discounts-manager";
+import { CompCodesManager } from "@/components/comp-codes-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -42,9 +43,19 @@ export default async function ConsoleDiscountsPage() {
       </header>
       <main className="mx-auto max-w-[1100px] px-6 py-8">
         <h1 className="mb-6 font-head text-[26px] font-bold tracking-[-0.02em]">
-          Discount codes
+          Discounts &amp; codes
         </h1>
         <DiscountsManager />
+
+        <div className="mt-12">
+          <h2 className="font-head text-[20px] font-bold tracking-[-0.02em]">
+            Complimentary codes
+          </h2>
+          <p className="mb-6 mt-1 text-[13.5px] text-muted">
+            Free-access codes teams redeem in Settings → Plan &amp; billing.
+          </p>
+          <CompCodesManager />
+        </div>
       </main>
     </div>
   );

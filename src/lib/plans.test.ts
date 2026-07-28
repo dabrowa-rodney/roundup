@@ -41,6 +41,40 @@ describe("resolvePlan", () => {
     expect(p.limits.maxMembers).toBe(PLAN_LIMITS.free.maxMembers);
     expect(p.limits.ai).toBe(false);
   });
+
+  it("permanent complimentary (no end date) stays business", () => {
+    const p = resolvePlan({
+      plan: "complimentary",
+      planStatus: null,
+      trialEndsAt: null,
+      complimentaryUntil: null,
+    });
+    expect(p.tier).toBe("business");
+    expect(p.isComplimentary).toBe(true);
+  });
+
+  it("time-limited complimentary is live until its end date", () => {
+    const p = resolvePlan({
+      plan: "complimentary",
+      planStatus: null,
+      trialEndsAt: null,
+      complimentaryUntil: future,
+    });
+    expect(p.tier).toBe("business");
+    expect(p.isComplimentary).toBe(true);
+    expect(p.limits.nestedTeams).toBe(true);
+  });
+
+  it("expired complimentary reverts to free", () => {
+    const p = resolvePlan({
+      plan: "complimentary",
+      planStatus: null,
+      trialEndsAt: null,
+      complimentaryUntil: past,
+    });
+    expect(p.tier).toBe("free");
+    expect(p.isComplimentary).toBe(false);
+  });
 });
 
 describe("tierForLookupKey", () => {
