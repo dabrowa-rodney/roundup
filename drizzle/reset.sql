@@ -27,6 +27,7 @@ DROP TABLE IF EXISTS "roundup_recipients" CASCADE;
 DROP TABLE IF EXISTS "email_log" CASCADE;
 DROP TABLE IF EXISTS "login_tokens" CASCADE;
 DROP TABLE IF EXISTS "roundups" CASCADE;
+DROP TABLE IF EXISTS "complimentary_codes" CASCADE;
 DROP TABLE IF EXISTS "settings" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
 DROP TABLE IF EXISTS "organisations" CASCADE;
@@ -41,6 +42,7 @@ CREATE TABLE "organisations" (
 	"plan_status" text,
 	"stripe_customer_id" text,
 	"trial_ends_at" timestamp,
+	"complimentary_until" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "organisations_slug_unique" UNIQUE("slug")
 );
@@ -169,6 +171,18 @@ CREATE TABLE "email_log" (
 	"recipient_count" integer DEFAULT 0 NOT NULL,
 	"sent_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "email_log_org_id_kind_week_start_unique" UNIQUE("org_id","kind","week_start")
+);
+
+CREATE TABLE "complimentary_codes" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"code" text NOT NULL,
+	"months" integer NOT NULL,
+	"max_redemptions" integer,
+	"times_redeemed" integer DEFAULT 0 NOT NULL,
+	"expires_at" timestamp,
+	"active" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "complimentary_codes_code_unique" UNIQUE("code")
 );
 
 CREATE TABLE "settings" (

@@ -73,15 +73,25 @@ export function resolvePlan(org: {
   plan: string;
   planStatus: string | null;
   trialEndsAt: Date | null;
+  complimentaryUntil?: Date | null;
 }): ResolvedPlan {
+  // A complimentary grant is live when the plan is 'complimentary' AND either
+  // it's permanent (complimentaryUntil null — an owner console grant) or its
+  // end date is still in the future (a time-limited redeemed code). An expired
+  // grant falls through to the normal free/trial logic below.
+  const compLive =
+    org.plan === "complimentary" &&
+    (org.complimentaryUntil == null ||
+      org.complimentaryUntil.getTime() > Date.now());
+
   const base = {
     paidPlan: org.plan,
-    isComplimentary: org.plan === "complimentary",
+    isComplimentary: compLive,
     isTrial: false,
     trialDaysLeft: 0,
   };
 
-  if (org.plan === "complimentary") {
+  if (compLive) {
     return { ...base, tier: "business", limits: PLAN_LIMITS.business };
   }
   if (

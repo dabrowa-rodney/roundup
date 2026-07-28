@@ -36,6 +36,9 @@ export async function GET() {
         paidPlan: plan.paidPlan,
         planStatus: org.planStatus,
         isComplimentary: plan.isComplimentary,
+        complimentaryUntil: org.complimentaryUntil
+          ? org.complimentaryUntil.toISOString()
+          : null,
         isTrial: plan.isTrial,
         trialDaysLeft: plan.trialDaysLeft,
         hasStripeCustomer: !!org.stripeCustomerId,

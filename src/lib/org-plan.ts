@@ -12,6 +12,7 @@ export async function getOrgPlan(orgId: number): Promise<ResolvedPlan> {
         plan: organisations.plan,
         planStatus: organisations.planStatus,
         trialEndsAt: organisations.trialEndsAt,
+        complimentaryUntil: organisations.complimentaryUntil,
       })
       .from(organisations)
       .where(eq(organisations.id, orgId))
