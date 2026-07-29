@@ -778,6 +778,10 @@ export function ReportsManager() {
         onCreated={fetchTemplates}
       />
       <DeleteTemplateModal
+        // Key on the target so the modal remounts fresh each open — otherwise
+        // its `busy` flag stays true after the first delete and disables the
+        // buttons on every subsequent one.
+        key={confirmDelete?.id ?? "none"}
         template={confirmDelete}
         onClose={() => setConfirmDelete(null)}
         onArchive={async () => {
