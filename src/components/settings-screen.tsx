@@ -144,7 +144,12 @@ function ReminderRow({
   );
 }
 
-export function SettingsScreen() {
+/** `isAdmin` comes from the server page (the session role isn't in the JWT).
+ *  Non-admins get their own Account card only: the org, billing, schedule and
+ *  reminder cards are org configuration they can't change — every write behind
+ *  them is admin-gated server-side, so showing them just leaked org detail
+ *  (plan, trial, subdomain) behind dead controls. */
+export function SettingsScreen({ isAdmin }: { isAdmin: boolean }) {
   const { schedule, setSchedule, reminders, setReminderSlot, setRoundupReady } =
     useSettings();
   const { data: session } = useSession();
@@ -187,6 +192,15 @@ export function SettingsScreen() {
         </div>
       </Card>
 
+      {!isAdmin ? (
+        <div className="rounded-card border border-line bg-surface px-[26px] py-6">
+          <p className="text-[13.5px] text-muted">
+            Organisation settings, billing and the weekly schedule are managed
+            by your administrators.
+          </p>
+        </div>
+      ) : (
+      <>
       {/* Organisation + AI generation */}
       <OrgSettingsCards />
 
@@ -272,6 +286,8 @@ export function SettingsScreen() {
         </p>
         <p className="text-[13px] text-muted">Manage recipients on the Team page by setting their role to &quot;Recipient&quot;. Admins always receive it.</p>
       </div>
+      </>
+      )}
     </div>
   );
 }

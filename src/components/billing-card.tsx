@@ -76,10 +76,14 @@ export function BillingCard() {
 
   const go = async (path: string, body?: unknown, busyKey = path) => {
     setBusy(busyKey);
+    // Start clean: a note or error from a previous action must not linger over
+    // a card that has already moved on.
     setError("");
+    setRedeemNote("");
+    const isCheckout = path === "/api/billing/checkout";
     // Pre-apply a redeemed discount code at checkout (not on the portal call).
     const finalBody =
-      path === "/api/billing/checkout" && promoCode
+      isCheckout && promoCode
         ? { ...(body as Record<string, unknown>), promoCode }
         : body;
     try {
@@ -94,8 +98,11 @@ export function BillingCard() {
         return;
       }
       setError(d.error || "Something went wrong — try again.");
+      // A code Stripe won't accept would break every later attempt: drop it.
+      if (isCheckout) setPromoCode("");
     } catch {
       setError("Something went wrong — try again.");
+      if (isCheckout) setPromoCode("");
     }
     setBusy(null);
   };
@@ -104,6 +111,7 @@ export function BillingCard() {
     const value = code.trim();
     if (!value) return;
     setBusy("redeem");
+    setError("");
     setRedeemError("");
     setRedeemNote("");
     try {
@@ -131,8 +139,16 @@ export function BillingCard() {
   };
 
   const paidActive = info.paidPlan === "team" || info.paidPlan === "business";
-  const permanentComplimentary = info.isComplimentary && !info.complimentaryUntil;
-  const showRedeem = !permanentComplimentary;
+  // The portal is the only way to cancel a Stripe subscription, so it must stay
+  // reachable for anyone who has a Stripe customer — including an org that
+  // redeemed a complimentary code while still subscribed.
+  const showPortal = info.hasStripeCustomer;
+  // Tier cards stay hidden for complimentary orgs (nothing to buy).
+  const showTiers = !info.isComplimentary && info.available && !paidActive;
+  const showComingSoon = !info.isComplimentary && !info.available && !showPortal;
+  // Codes can't be stacked: while complimentary access is live there is no
+  // redeem box at all.
+  const showRedeem = !info.isComplimentary;
 
   return (
     <div className="mb-4 rounded-card border border-line bg-surface px-[26px] py-6">
@@ -170,20 +186,26 @@ export function BillingCard() {
         ) : null}
       </div>
 
-      {info.isComplimentary ? null : !info.available ? (
+      {showComingSoon && (
         <p className="mt-3 text-[13px] text-muted">
           Paid plans are coming soon.
         </p>
-      ) : paidActive ? (
+      )}
+
+      {showPortal && (
         <button
           onClick={() => go("/api/billing/portal")}
           disabled={busy !== null}
           className="mt-4 flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2.5 text-[13.5px] font-semibold text-ink hover:border-accent disabled:opacity-50"
         >
           <CreditCard size={15} />
-          {busy ? "Opening…" : "Manage billing & invoices"}
+          {busy === "/api/billing/portal"
+            ? "Opening…"
+            : "Manage billing & invoices"}
         </button>
-      ) : (
+      )}
+
+      {showTiers && (
         <div className="mt-4 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
           {TIERS.map((t) => (
             <div key={t.key} className="rounded-xl border border-line p-4">
@@ -228,8 +250,27 @@ export function BillingCard() {
         </div>
       )}
 
+      {/* Applied discount code — removable, so a code Stripe rejects can't
+          permanently brick checkout. */}
+      {promoCode && (
+        <div className="mt-4">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[12.5px] font-semibold text-accent">
+            Code {promoCode} applied
+            <button
+              type="button"
+              onClick={() => setPromoCode("")}
+              aria-label={`Remove code ${promoCode}`}
+              title="Remove code"
+              className="leading-none opacity-70 hover:opacity-100"
+            >
+              ✕
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* Redeem a code */}
-      {showRedeem && (
+      {showRedeem ? (
         <div className="mt-5 border-t border-line pt-4">
           <label
             htmlFor="redeem-code"
@@ -262,6 +303,14 @@ export function BillingCard() {
           {redeemNote && (
             <p className="mt-2 text-[13px] font-medium text-good">{redeemNote}</p>
           )}
+        </div>
+      ) : (
+        <div className="mt-5 border-t border-line pt-4">
+          <p className="text-[13px] text-muted">
+            {info.complimentaryUntil
+              ? `Complimentary access runs to ${formatDate(info.complimentaryUntil)} — codes can't be stacked.`
+              : "Complimentary access is active — codes can't be stacked."}
+          </p>
         </div>
       )}
 

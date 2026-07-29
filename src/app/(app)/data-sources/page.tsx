@@ -1,7 +1,13 @@
+import { redirect } from "next/navigation";
+import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { DataSourcesTable } from "@/components/data-sources-table";
 
-export default function DataSourcesPage() {
+export default async function DataSourcesPage() {
+  // Admin-only: connected sheets are org configuration.
+  const me = await getSessionUser();
+  if (!me || me.role !== "admin") redirect("/my-reports");
+
   return (
     <Screen title="Data sources" subtitle="Context pulled into each Roundup">
       <p className="mb-5 max-w-[560px] text-[14.5px] text-muted">
