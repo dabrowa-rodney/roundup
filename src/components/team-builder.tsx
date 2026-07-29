@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Avatar, SectionLabel } from "./ui";
 import { ConfirmDialog } from "./confirm-dialog";
+import { apiErrorMessage, safeJson } from "@/lib/api-error";
 
 /* ------------------------------------------------------------------ types */
 
@@ -220,16 +221,15 @@ function RenameTeamModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(apiErrorMessage(res.status, await safeJson(res), "Couldn't rename this team."));
         setLoading(false);
         return;
       }
       await onSaved();
       onClose();
     } catch {
-      setError("Failed to rename team");
+      setError("Couldn't reach the server — check your connection.");
       setLoading(false);
     }
   };
@@ -292,16 +292,15 @@ function AddSubTeamModal({
           cadence,
         }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(apiErrorMessage(res.status, await safeJson(res), "Couldn't create the sub-team."));
         setLoading(false);
         return;
       }
       await onCreated();
       onClose();
     } catch {
-      setError("Failed to create sub-team");
+      setError("Couldn't reach the server — check your connection.");
       setLoading(false);
     }
   };
@@ -387,16 +386,15 @@ function ConfigureTeamModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cadence, rollupMode, templateMode }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(apiErrorMessage(res.status, await safeJson(res), "Couldn't update this team."));
         setLoading(false);
         return;
       }
       await onSaved();
       onClose();
     } catch {
-      setError("Failed to update team");
+      setError("Couldn't reach the server — check your connection.");
       setLoading(false);
     }
   };
@@ -510,15 +508,14 @@ function TeamMembersPanel({
     setBusy(true);
     try {
       const res = await fn();
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(apiErrorMessage(res.status, await safeJson(res)));
         return false;
       }
       await onMutated();
       return true;
     } catch {
-      setError("Something went wrong");
+      setError("Couldn't reach the server — check your connection.");
       return false;
     } finally {
       setBusy(false);
@@ -910,12 +907,12 @@ export function TeamBuilder({
   const fetchTeams = useCallback(async () => {
     try {
       const res = await fetch("/api/teams");
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) {
-        setError(data.error || "Failed to load the team structure");
+        setError(apiErrorMessage(res.status, data, "Couldn't load the team structure."));
         return;
       }
-      setTeams(data.teams);
+      setTeams((data as { teams: TeamNode[] }).teams);
     } catch {
       setError("Failed to load the team structure");
     }
@@ -935,14 +932,13 @@ export function TeamBuilder({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ archived }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(apiErrorMessage(res.status, await safeJson(res)));
         return;
       }
       await fetchTeams();
     } catch {
-      setError("Something went wrong");
+      setError("Couldn't reach the server — check your connection.");
     }
   };
 
