@@ -152,6 +152,24 @@ export function periodRange(period: PeriodType, startISO: string): string {
   return weekRange(d);
 }
 
+/**
+ * Add whole months, clamping to the last day of the target month rather than
+ * overflowing into the next one. Plain setUTCMonth rolls over — 31 Jan + 1
+ * month lands on 3 March — which would silently hand out extra days on a
+ * complimentary grant. 31 Jan + 1 → 28/29 Feb.
+ */
+export function addMonthsClamped(date: Date, months: number): Date {
+  const day = date.getUTCDate();
+  const out = new Date(date);
+  out.setUTCDate(1); // avoid overflow while shifting the month
+  out.setUTCMonth(out.getUTCMonth() + months);
+  const lastDay = new Date(
+    Date.UTC(out.getUTCFullYear(), out.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  out.setUTCDate(Math.min(day, lastDay));
+  return out;
+}
+
 /** Coarse relative time, e.g. "2 min ago", "3 h ago", "yesterday". */
 export function relativeTime(date: Date | string | null | undefined): string {
   if (!date) return "";

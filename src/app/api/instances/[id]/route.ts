@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { answers, reportInstances, reportTemplates, settings, teams } from "@/db/schema";
+import {
+  answers,
+  questions,
+  reportInstances,
+  reportTemplates,
+  settings,
+  teams,
+} from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { isPeriodClosed, type ScheduleSettings } from "@/lib/lifecycle";
 import { periodForCadence } from "@/lib/dates";
@@ -84,10 +91,23 @@ export async function PATCH(
   const incoming: { questionId: number; value: unknown; attachments?: unknown }[] =
     Array.isArray(body.answers) ? body.answers : [];
 
-  // Upsert answers (unique on instance_id + question_id)
+  // Upsert answers (unique on instance_id + question_id).
+  // SECURITY: only questions belonging to THIS instance's template may be
+  // answered. Without this, any existing question id was accepted — including
+  // another organisation's — and the generate step (which joins answers →
+  // questions) would then surface that org's question text and config in this
+  // org's Roundup. Ids outside the template are dropped.
   if (incoming.length > 0) {
+    const allowed = new Set(
+      (
+        await db
+          .select({ id: questions.id })
+          .from(questions)
+          .where(eq(questions.templateId, instance.templateId))
+      ).map((q) => q.id),
+    );
     const rows = incoming
-      .filter((a) => typeof a.questionId === "number")
+      .filter((a) => typeof a.questionId === "number" && allowed.has(a.questionId))
       .map((a) => ({
         instanceId,
         questionId: a.questionId,

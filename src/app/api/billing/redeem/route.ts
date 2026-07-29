@@ -3,6 +3,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { complimentaryCodes, organisations } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
+import { resolvePlan } from "@/lib/plans";
+import { addMonthsClamped } from "@/lib/dates";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 
 // POST /api/billing/redeem  { code: string }
@@ -29,11 +31,7 @@ export async function POST(req: NextRequest) {
 
   const org = (
     await db
-      .select({
-        id: organisations.id,
-        plan: organisations.plan,
-        complimentaryUntil: organisations.complimentaryUntil,
-      })
+      .select()
       .from(organisations)
       .where(eq(organisations.id, me.orgId))
       .limit(1)
@@ -42,13 +40,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // A permanent (console-granted) complimentary org needs no codes.
-  if (org.plan === "complimentary" && org.complimentaryUntil === null) {
+  const plan = resolvePlan(org);
+
+  // Complimentary access can't be STACKED. Without this an org could redeem
+  // the same (or another) code repeatedly — each claim extends from the current
+  // end date — and grant itself years of free Business access. One live grant
+  // at a time; come back when it lapses.
+  if (plan.isComplimentary) {
     return NextResponse.json({
       kind: "complimentary",
-      permanent: true,
-      message: "This organisation already has complimentary access.",
+      permanent: org.complimentaryUntil === null,
+      until: org.complimentaryUntil?.toISOString() ?? null,
+      message:
+        org.complimentaryUntil === null
+          ? "This organisation already has complimentary access."
+          : `Complimentary access already runs to ${org.complimentaryUntil.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} — codes can't be stacked.`,
     });
+  }
+
+  // Don't hand free access to someone Stripe is still billing: the plan column
+  // would flip to 'complimentary' while the subscription kept charging them,
+  // and the next webhook would wipe the grant anyway. Have them cancel first.
+  if (
+    (org.plan === "team" || org.plan === "business") &&
+    org.planStatus &&
+    !["canceled", "unpaid", "incomplete_expired"].includes(org.planStatus)
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "You have an active subscription. Cancel it under “Manage billing & invoices” first, then redeem this code — or contact us and we'll switch you over.",
+      },
+      { status: 409 },
+    );
   }
 
   // ── Complimentary code? Claim it race-safely (active, not expired, uses
@@ -68,15 +92,8 @@ export async function POST(req: NextRequest) {
 
   if (claimed.length > 0) {
     const months = claimed[0].months;
-    // Extend from the later of now / an existing future grant.
-    const base =
-      org.plan === "complimentary" &&
-      org.complimentaryUntil &&
-      org.complimentaryUntil.getTime() > Date.now()
-        ? new Date(org.complimentaryUntil)
-        : new Date();
-    const until = new Date(base);
-    until.setUTCMonth(until.getUTCMonth() + months);
+    // Stacking is refused above, so the grant always starts now.
+    const until = addMonthsClamped(new Date(), months);
 
     await db
       .update(organisations)
@@ -91,8 +108,9 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // A complimentary code that exists but couldn't be claimed is spent/expired/
-  // inactive — say so rather than falling through to "invalid".
+  // A code that exists but couldn't be claimed (spent / expired / inactive) is
+  // reported with the SAME message as one that doesn't exist — distinguishing
+  // them turns this endpoint into an oracle for enumerating real codes.
   const existsComp = (
     await db
       .select({ id: complimentaryCodes.id })
@@ -102,7 +120,7 @@ export async function POST(req: NextRequest) {
   )[0];
   if (existsComp) {
     return NextResponse.json(
-      { error: "That code is no longer available (expired or fully redeemed)." },
+      { error: "That code isn't valid." },
       { status: 400 },
     );
   }

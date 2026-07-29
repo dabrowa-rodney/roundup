@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { settings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getSessionUser } from "@/lib/session";
+import { DAY_NAMES, isValidTimeZone } from "@/lib/lifecycle";
 
 // GET /api/settings — the caller's org's settings
 export async function GET() {
@@ -53,17 +54,58 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
-  const allowedFields = [
-    "closeDay", "closeTime", "openDay", "openTime", "timezone",
-    "reminder1Enabled", "reminder1Day", "reminder1Time",
-    "reminder2Enabled", "reminder2Day", "reminder2Time",
+  const DAY_FIELDS = ["closeDay", "openDay", "reminder1Day", "reminder2Day"];
+  const TIME_FIELDS = ["closeTime", "openTime", "reminder1Time", "reminder2Time"];
+  const BOOL_FIELDS = [
+    "reminder1Enabled",
+    "reminder2Enabled",
     "reminderRoundupReady",
   ];
+  const allowedFields = [
+    ...DAY_FIELDS,
+    ...TIME_FIELDS,
+    ...BOOL_FIELDS,
+    "timezone",
+  ];
 
+  // These values are fed to Intl/date maths by the schedule helpers and the
+  // nightly crons, which iterate EVERY org — an unvalidated value here (e.g.
+  // a bogus timezone, which makes Intl.DateTimeFormat throw) would break the
+  // shared job for every other organisation too. Validate strictly.
   for (const field of allowedFields) {
-    if (body[field] !== undefined) {
-      updates[field] = body[field];
+    if (body[field] === undefined) continue;
+    const v = body[field];
+
+    if (DAY_FIELDS.includes(field)) {
+      if (!DAY_NAMES.includes(v)) {
+        return NextResponse.json(
+          { error: `${field} must be a day name (e.g. "Monday")` },
+          { status: 400 },
+        );
+      }
+    } else if (TIME_FIELDS.includes(field)) {
+      if (typeof v !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
+        return NextResponse.json(
+          { error: `${field} must be a 24-hour time (e.g. "20:00")` },
+          { status: 400 },
+        );
+      }
+    } else if (BOOL_FIELDS.includes(field)) {
+      if (typeof v !== "boolean") {
+        return NextResponse.json(
+          { error: `${field} must be true or false` },
+          { status: 400 },
+        );
+      }
+    } else if (field === "timezone") {
+      if (typeof v !== "string" || !isValidTimeZone(v)) {
+        return NextResponse.json(
+          { error: "That isn't a recognised timezone (e.g. \"Europe/London\")" },
+          { status: 400 },
+        );
+      }
     }
+    updates[field] = v;
   }
 
   // Upsert the org's row — create if it doesn't exist, update if it does
