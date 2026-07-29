@@ -100,8 +100,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- Swap the unique key: many roundups per org now — one per team per period.
 ALTER TABLE "roundups" DROP CONSTRAINT IF EXISTS "roundups_org_id_week_start_unique";
 
+-- NB: adding a UNIQUE constraint builds an index behind it, so a re-run raises
+-- duplicate_table ("relation already exists"), NOT duplicate_object — both are
+-- caught so this migration really is safe to re-run.
 DO $$ BEGIN
 	ALTER TABLE "roundups"
 		ADD CONSTRAINT "roundups_team_id_period_type_period_start_unique"
 		UNIQUE("team_id","period_type","period_start");
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
