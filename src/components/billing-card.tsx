@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, CreditCard, Sparkles } from "lucide-react";
 
 interface BillingInfo {
+  /** What the org uses beyond its plan. Existing usage is grandfathered rather
+   *  than switched off, so we say so instead of breaking it. */
+  overPlan: string[];
   tier: "free" | "team" | "business";
   label: string;
   paidPlan: string;
@@ -185,6 +188,23 @@ export function BillingCard() {
           </span>
         ) : null}
       </div>
+
+      {info.overPlan.length > 0 && (
+        <div className="mt-3 rounded-xl border border-warn/30 bg-warn-soft px-4 py-3">
+          <div className="text-[13px] font-semibold text-warn-ink">
+            Above your {info.label} plan
+          </div>
+          <ul className="mt-1 list-disc pl-4 text-[12.5px] text-warn-ink">
+            {info.overPlan.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[12.5px] text-warn-ink/80">
+            Everything you&apos;ve already set up keeps working — but you
+            can&apos;t add more until you upgrade.
+          </p>
+        </div>
+      )}
 
       {showComingSoon && (
         <p className="mt-3 text-[13px] text-muted">

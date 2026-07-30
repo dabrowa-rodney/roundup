@@ -27,7 +27,9 @@ DROP TABLE IF EXISTS "roundup_recipients" CASCADE;
 DROP TABLE IF EXISTS "email_log" CASCADE;
 DROP TABLE IF EXISTS "login_tokens" CASCADE;
 DROP TABLE IF EXISTS "roundups" CASCADE;
+DROP TABLE IF EXISTS "complimentary_redemptions" CASCADE;
 DROP TABLE IF EXISTS "complimentary_codes" CASCADE;
+DROP TABLE IF EXISTS "rate_limits" CASCADE;
 DROP TABLE IF EXISTS "settings" CASCADE;
 DROP TABLE IF EXISTS "users" CASCADE;
 DROP TABLE IF EXISTS "organisations" CASCADE;
@@ -185,6 +187,27 @@ CREATE TABLE "complimentary_codes" (
 	CONSTRAINT "complimentary_codes_code_unique" UNIQUE("code")
 );
 
+CREATE TABLE "complimentary_redemptions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"code_id" integer NOT NULL,
+	"org_id" integer NOT NULL,
+	"user_id" integer,
+	"months" integer NOT NULL,
+	"granted_until" timestamp,
+	"redeemed_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "complimentary_redemptions_code_id_org_id_unique" UNIQUE("code_id","org_id")
+);
+
+CREATE TABLE "rate_limits" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"bucket" text NOT NULL,
+	"window_start" timestamp NOT NULL,
+	"count" integer DEFAULT 0 NOT NULL,
+	CONSTRAINT "rate_limits_bucket_window_start_unique" UNIQUE("bucket","window_start")
+);
+
+CREATE INDEX "rate_limits_window_start_idx" ON "rate_limits" ("window_start");
+
 CREATE TABLE "settings" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"org_id" integer NOT NULL,
@@ -241,4 +264,7 @@ ALTER TABLE "teams" ADD CONSTRAINT "teams_parent_team_id_teams_id_fk" FOREIGN KE
 ALTER TABLE "team_members" ADD CONSTRAINT "team_members_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "team_members" ADD CONSTRAINT "team_members_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "report_templates" ADD CONSTRAINT "report_templates_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "complimentary_redemptions" ADD CONSTRAINT "complimentary_redemptions_code_id_complimentary_codes_id_fk" FOREIGN KEY ("code_id") REFERENCES "public"."complimentary_codes"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "complimentary_redemptions" ADD CONSTRAINT "complimentary_redemptions_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "complimentary_redemptions" ADD CONSTRAINT "complimentary_redemptions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "roundups" ADD CONSTRAINT "roundups_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE no action ON UPDATE no action;

@@ -44,11 +44,14 @@ reasoning recorded so they aren't lost.
   lead, and snapshot recipient identity on sent roundups instead of cascading.
 - **Restore semantics (F6)** — archiving parent A after independently archiving
   child B, then restoring A, resurrects B. Track archive origin to fix.
-- **Downgrade enforcement** — a Business org that builds sub-teams then
-  downgrades keeps them (grandfathered); nothing re-checks the entitlement at
-  generate/send. This is a product/billing decision, not a bug.
+- ~~**Downgrade enforcement**~~ — **decided and documented.** Existing
+  structure is grandfathered (never torn down mid-flow); creation is blocked;
+  and the org is told what's over plan via `overPlanFeatures()` in the billing
+  card. See "Grandfathering policy" in `docs/ARCHITECTURE.md`.
 - **Dead column** — `report_templates.cadence` is unused (period derives from
   the team's cadence); drop it or assert it mirrors the team.
+- ~~**FK naming divergence**~~ — fixed in `0009`: a fresh `reset.sql` DB and a
+  migrated one now produce byte-identical schemas (verified against Postgres 16).
 - **D3 — team leads managing their own subtree**: structure/generation actions
   remain org-admin-only; the per-team lead role is stored and distributed to.
 

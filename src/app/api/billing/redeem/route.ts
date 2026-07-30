@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { complimentaryCodes, organisations } from "@/db/schema";
+import {
+  complimentaryCodes,
+  complimentaryRedemptions,
+  organisations,
+} from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { resolvePlan } from "@/lib/plans";
 import { addMonthsClamped } from "@/lib/dates";
+import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 
 // POST /api/billing/redeem  { code: string }
@@ -27,6 +32,20 @@ export async function POST(req: NextRequest) {
     typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
   if (!code) {
     return NextResponse.json({ error: "Enter a code" }, { status: 400 });
+  }
+
+  // Codes are short and human-memorable, so this endpoint is guessable at
+  // volume. Cap attempts per org — generous for anyone typing a real code,
+  // useless for enumeration.
+  const limit = await rateLimit(`redeem:org:${me.orgId}`, 10, 60 * 60 * 1000);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Too many attempts — try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(retryAfterSeconds(limit)) },
+      },
+    );
   }
 
   const org = (
@@ -75,8 +94,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Complimentary code? Claim it race-safely (active, not expired, uses
-  //    remaining), all in one guarded UPDATE. ──
+  // ── Complimentary code? ──
+  // Three steps, because the HTTP driver has no interactive transactions:
+  //   1. claim a use of the code (single guarded UPDATE — race-safe: a
+  //      concurrent claim blocks on the row and re-checks max_redemptions)
+  //   2. record the redemption; UNIQUE(code_id, org_id) is what stops the same
+  //      org redeeming this code again, and is the audit trail
+  //   3. grant the access
+  // If (2) says this org already used the code we hand the claim back, so a
+  // refused redemption doesn't silently consume someone else's allocation.
   const claimed = await db
     .update(complimentaryCodes)
     .set({ timesRedeemed: sql`${complimentaryCodes.timesRedeemed} + 1` })
@@ -88,12 +114,36 @@ export async function POST(req: NextRequest) {
         sql`(${complimentaryCodes.maxRedemptions} IS NULL OR ${complimentaryCodes.timesRedeemed} < ${complimentaryCodes.maxRedemptions})`,
       ),
     )
-    .returning({ months: complimentaryCodes.months });
+    .returning({ id: complimentaryCodes.id, months: complimentaryCodes.months });
 
   if (claimed.length > 0) {
-    const months = claimed[0].months;
+    const { id: codeId, months } = claimed[0];
     // Stacking is refused above, so the grant always starts now.
     const until = addMonthsClamped(new Date(), months);
+
+    const recorded = await db
+      .insert(complimentaryRedemptions)
+      .values({
+        codeId,
+        orgId: org.id,
+        userId: me.id,
+        months,
+        grantedUntil: until,
+      })
+      .onConflictDoNothing()
+      .returning({ id: complimentaryRedemptions.id });
+
+    if (recorded.length === 0) {
+      // Already redeemed by this org — return the use we just claimed.
+      await db
+        .update(complimentaryCodes)
+        .set({ timesRedeemed: sql`GREATEST(${complimentaryCodes.timesRedeemed} - 1, 0)` })
+        .where(eq(complimentaryCodes.id, codeId));
+      return NextResponse.json(
+        { error: "This organisation has already redeemed that code." },
+        { status: 409 },
+      );
+    }
 
     await db
       .update(organisations)

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { organisations } from "@/db/schema";
+import { organisations, reportTemplates, teams, users } from "@/db/schema";
 import { encryptSecret } from "@/lib/crypto";
 import { slugProblem } from "@/lib/org";
-import { resolvePlan } from "@/lib/plans";
+import { overPlanFeatures, resolvePlan } from "@/lib/plans";
 import { getSessionUser } from "@/lib/session";
 import { stripeConfigured } from "@/lib/stripe";
 
@@ -25,12 +25,42 @@ export async function GET() {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const plan = resolvePlan(org);
+
+  // What's over the current plan. Existing structure is grandfathered rather
+  // than switched off (see overPlanFeatures), so the org is told instead.
+  const [memberCount, templateCount, teamRows] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(users)
+      .where(eq(users.orgId, me.orgId)),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(reportTemplates)
+      .where(
+        and(
+          eq(reportTemplates.orgId, me.orgId),
+          isNull(reportTemplates.archivedAt),
+        ),
+      ),
+    db
+      .select({ parentTeamId: teams.parentTeamId, cadence: teams.cadence })
+      .from(teams)
+      .where(and(eq(teams.orgId, me.orgId), isNull(teams.archivedAt))),
+  ]);
+  const overPlan = overPlanFeatures(plan.limits, {
+    members: memberCount[0]?.n ?? 0,
+    templates: templateCount[0]?.n ?? 0,
+    subTeams: teamRows.filter((t) => t.parentTeamId !== null).length,
+    nonWeeklyTeams: teamRows.filter((t) => t.cadence !== "weekly").length,
+  });
+
   return NextResponse.json({
     org: {
       name: org.name,
       slug: org.slug,
       hasAnthropicKey: !!org.anthropicKeyEnc,
       billing: {
+        overPlan,
         tier: plan.tier,
         label: plan.limits.label,
         paidPlan: plan.paidPlan,

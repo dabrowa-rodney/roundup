@@ -320,6 +320,49 @@ export const complimentaryCodes = pgTable("complimentary_codes", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ── Complimentary redemptions (audit trail + per-org single use) ──
+// One row per (code × organisation). The UNIQUE key is what stops an org
+// redeeming the same code twice, and the row is the record of who granted
+// themselves what — needed for support and revenue recognition, which a bare
+// times_redeemed counter can't answer.
+export const complimentaryRedemptions = pgTable(
+  "complimentary_redemptions",
+  {
+    id: serial("id").primaryKey(),
+    codeId: integer("code_id")
+      .notNull()
+      .references(() => complimentaryCodes.id, { onDelete: "cascade" }),
+    orgId: integer("org_id")
+      .notNull()
+      .references(() => organisations.id),
+    // Who clicked redeem. Kept nullable so removing a user doesn't erase the
+    // billing record.
+    userId: integer("user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    months: integer("months").notNull(),
+    grantedUntil: timestamp("granted_until"),
+    redeemedAt: timestamp("redeemed_at").notNull().defaultNow(),
+  },
+  (t) => [unique().on(t.codeId, t.orgId)],
+);
+
+// ── Rate limits (fixed-window counters) ────────────────
+// DB-backed on purpose: serverless instances don't share memory, so an
+// in-process limiter is trivially bypassed by hitting a cold instance. One row
+// per (bucket, window); the counter is incremented atomically by an upsert.
+// See lib/rate-limit.ts. Old windows are swept by the lifecycle cron.
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    id: serial("id").primaryKey(),
+    bucket: text("bucket").notNull(), // e.g. "redeem:org:12", "magic:a@b.com"
+    windowStart: timestamp("window_start").notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [unique().on(t.bucket, t.windowStart)],
+);
+
 // ── Org settings (one row per organisation) ────────────
 export const settings = pgTable("settings", {
   id: serial("id").primaryKey(),

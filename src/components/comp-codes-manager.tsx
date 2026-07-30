@@ -11,6 +11,7 @@ interface CompCode {
   timesRedeemed: number;
   expiresAt: string | null;
   active: boolean;
+  redemptions?: { orgName: string; grantedUntil: string | null; redeemedAt: string }[];
 }
 
 const inputClass =
@@ -182,6 +183,26 @@ export function CompCodesManager() {
               <span className="text-[13.5px]">
                 {c.timesRedeemed}
                 {c.maxRedemptions ? ` / ${c.maxRedemptions}` : ""}
+                {/* Which orgs actually redeemed it — the counter alone can't say. */}
+                {c.redemptions && c.redemptions.length > 0 && (
+                  <span
+                    className="block text-[11.5px] text-muted"
+                    title={c.redemptions
+                      .map(
+                        (r) =>
+                          `${r.orgName} — ${new Date(r.redeemedAt).toLocaleDateString("en-GB")}`,
+                      )
+                      .join("\n")}
+                  >
+                    {c.redemptions
+                      .slice(0, 2)
+                      .map((r) => r.orgName)
+                      .join(", ")}
+                    {c.redemptions.length > 2
+                      ? ` +${c.redemptions.length - 2} more`
+                      : ""}
+                  </span>
+                )}
               </span>
               <span className="text-[13px] text-muted">
                 {c.expiresAt

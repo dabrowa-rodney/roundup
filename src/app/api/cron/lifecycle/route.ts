@@ -16,6 +16,7 @@ import {
   type ScheduleSettings,
 } from "@/lib/lifecycle";
 import { getSessionUser } from "@/lib/session";
+import { sweepRateLimits } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
@@ -198,9 +199,16 @@ export async function GET(req: NextRequest) {
     )
     .returning({ id: organisations.id });
 
+  // Keep the fixed-window counters from growing without bound; anything older
+  // than a day is long past its window.
+  const sweptRateLimits = await sweepRateLimits(
+    new Date(now.getTime() - 24 * 60 * 60 * 1000),
+  );
+
   return NextResponse.json({
     ok: true,
     week: weekIso,
+    sweptRateLimits,
     orgs: orgIds.length,
     locked,
     created,

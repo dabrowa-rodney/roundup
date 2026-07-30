@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { resolvePlan, tierForLookupKey, PLAN_LIMITS } from "./plans";
+import {
+  overPlanFeatures,
+  resolvePlan,
+  tierForLookupKey,
+  PLAN_LIMITS,
+  type PlanUsage,
+} from "./plans";
 
 const future = new Date(Date.now() + 5 * 86_400_000);
 const past = new Date(Date.now() - 86_400_000);
@@ -82,5 +88,52 @@ describe("tierForLookupKey", () => {
     expect(tierForLookupKey("roundup_team_monthly")).toBe("team");
     expect(tierForLookupKey("roundup_business_annual")).toBe("business");
     expect(tierForLookupKey("something_else")).toBeNull();
+  });
+});
+
+describe("overPlanFeatures (grandfathering notice)", () => {
+  const usage = (p: Partial<PlanUsage> = {}): PlanUsage => ({
+    members: 1,
+    templates: 1,
+    subTeams: 0,
+    nonWeeklyTeams: 0,
+    ...p,
+  });
+
+  it("says nothing when everything fits", () => {
+    expect(overPlanFeatures(PLAN_LIMITS.free, usage())).toEqual([]);
+    expect(
+      overPlanFeatures(PLAN_LIMITS.business, usage({ members: 500, subTeams: 20 })),
+    ).toEqual([]);
+  });
+
+  it("flags an over-limit member and template count", () => {
+    const over = overPlanFeatures(
+      PLAN_LIMITS.free,
+      usage({ members: 40, templates: 12 }),
+    );
+    expect(over.join(" ")).toContain("40 members");
+    expect(over.join(" ")).toContain("12 reports");
+  });
+
+  it("flags sub-teams and non-weekly cadences below Business", () => {
+    const over = overPlanFeatures(
+      PLAN_LIMITS.team,
+      usage({ subTeams: 3, nonWeeklyTeams: 2 }),
+    );
+    expect(over.join(" ")).toContain("3 sub-teams");
+    expect(over.join(" ")).toContain("monthly or quarterly");
+  });
+
+  it("never flags unlimited limits as exceeded", () => {
+    // Business has Infinity members/templates.
+    expect(
+      overPlanFeatures(PLAN_LIMITS.business, usage({ members: 99999, templates: 500 })),
+    ).toEqual([]);
+  });
+
+  it("singularises a single sub-team", () => {
+    const over = overPlanFeatures(PLAN_LIMITS.free, usage({ subTeams: 1 }));
+    expect(over.join(" ")).toContain("1 sub-team (");
   });
 });

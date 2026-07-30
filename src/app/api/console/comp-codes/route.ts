@@ -3,7 +3,11 @@ import { getServerSession } from "next-auth";
 import { desc, eq } from "drizzle-orm";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { complimentaryCodes } from "@/db/schema";
+import {
+  complimentaryCodes,
+  complimentaryRedemptions,
+  organisations,
+} from "@/db/schema";
 import { isSuperAdmin } from "@/lib/super-admin";
 
 // Owner-minted complimentary codes (Roundup-internal — unlike discount codes,
@@ -18,7 +22,8 @@ async function guard() {
   return null;
 }
 
-// GET /api/console/comp-codes — list all complimentary codes.
+// GET /api/console/comp-codes — all complimentary codes, each with the
+// organisations that redeemed it (times_redeemed alone can't answer "who?").
 export async function GET() {
   const err = await guard();
   if (err) return err;
@@ -26,6 +31,28 @@ export async function GET() {
     .select()
     .from(complimentaryCodes)
     .orderBy(desc(complimentaryCodes.createdAt));
+
+  const redemptions = await db
+    .select({
+      codeId: complimentaryRedemptions.codeId,
+      orgName: organisations.name,
+      grantedUntil: complimentaryRedemptions.grantedUntil,
+      redeemedAt: complimentaryRedemptions.redeemedAt,
+    })
+    .from(complimentaryRedemptions)
+    .innerJoin(
+      organisations,
+      eq(complimentaryRedemptions.orgId, organisations.id),
+    )
+    .orderBy(desc(complimentaryRedemptions.redeemedAt));
+
+  const byCode = new Map<number, typeof redemptions>();
+  for (const r of redemptions) {
+    const list = byCode.get(r.codeId) ?? [];
+    list.push(r);
+    byCode.set(r.codeId, list);
+  }
+
   return NextResponse.json({
     codes: codes.map((c) => ({
       id: c.id,
@@ -35,6 +62,11 @@ export async function GET() {
       timesRedeemed: c.timesRedeemed,
       expiresAt: c.expiresAt ? c.expiresAt.toISOString() : null,
       active: c.active,
+      redemptions: (byCode.get(c.id) ?? []).map((r) => ({
+        orgName: r.orgName,
+        grantedUntil: r.grantedUntil ? r.grantedUntil.toISOString() : null,
+        redeemedAt: r.redeemedAt.toISOString(),
+      })),
     })),
   });
 }

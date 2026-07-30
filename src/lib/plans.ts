@@ -69,6 +69,55 @@ export interface ResolvedPlan {
   trialDaysLeft: number;
 }
 
+/** What an org is actually using, for the over-plan check below. */
+export interface PlanUsage {
+  members: number;
+  templates: number;
+  subTeams: number; // teams below the root
+  nonWeeklyTeams: number; // monthly/quarterly cadences
+}
+
+/**
+ * GRANDFATHERING POLICY (deliberate, see docs/ARCHITECTURE.md)
+ *
+ * Limits are enforced when something is CREATED — inviting a member, adding a
+ * template, creating a sub-team, switching cadence. What already exists is
+ * never taken away or switched off when a plan lapses: tearing down a
+ * customer's live reporting structure mid-week would lose real work, and the
+ * cheapest moment to say no is at creation.
+ *
+ * The cost is that a lapsed org can sit above its plan indefinitely, so the
+ * rule is: grandfather it, but SAY SO. This returns the human-readable list of
+ * what's over the current plan, which the billing card surfaces.
+ */
+export function overPlanFeatures(limits: PlanLimits, usage: PlanUsage): string[] {
+  const over: string[] = [];
+  if (Number.isFinite(limits.maxMembers) && usage.members > limits.maxMembers) {
+    over.push(
+      `${usage.members} members (${limits.label} includes ${limits.maxMembers})`,
+    );
+  }
+  if (
+    Number.isFinite(limits.maxTemplates) &&
+    usage.templates > limits.maxTemplates
+  ) {
+    over.push(
+      `${usage.templates} reports (${limits.label} includes ${limits.maxTemplates})`,
+    );
+  }
+  if (!limits.nestedTeams && usage.subTeams > 0) {
+    over.push(
+      `${usage.subTeams} sub-team${usage.subTeams === 1 ? "" : "s"} (a Business feature)`,
+    );
+  }
+  if (!limits.nestedTeams && usage.nonWeeklyTeams > 0) {
+    over.push(
+      `${usage.nonWeeklyTeams} team${usage.nonWeeklyTeams === 1 ? "" : "s"} on a monthly or quarterly cadence (a Business feature)`,
+    );
+  }
+  return over;
+}
+
 export function resolvePlan(org: {
   plan: string;
   planStatus: string | null;
