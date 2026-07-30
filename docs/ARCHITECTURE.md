@@ -91,6 +91,33 @@ until sub-teams exist). Reports roll UP the tree:
 - Nested teams + non-weekly cadences are **Business-tier** (D5), gated at
   sub-team creation and cadence change.
 
+### Team authority (D3) — `src/lib/team-authority.ts`
+
+Who may do what to a team is a **pure function of the tree**, kept separate
+from the DB so it is exhaustively testable (`team-authority.test.ts`).
+`getTeamAuthority(orgId, userId, orgRole)` in `lib/teams.ts` loads the org's
+live teams plus the caller's `lead` memberships and hands them to
+`teamAuthority()`, which returns `{ isOrgAdmin, leadTeamIds, managedTeamIds }`
+— `managedTeamIds` being the union of the subtrees rooted at the teams the
+caller leads (every team, for an org admin).
+
+- `canManageTeam` — configure a team, staff it, drive its Roundups. True for
+  anything in `managedTeamIds`.
+- `canCreateSubTeam(parentId)` — nest below a team you manage.
+- `canArchiveTeam` — manage, **but never your own lead team**: a lead cannot
+  delete the mandate their authority derives from. Its parent's lead or an
+  admin can.
+- `canMoveTeam(id, newParentId)` — both ends must be managed, and again not
+  your own lead team, so a subtree can never be relocated out of (or into)
+  someone else's reach.
+
+Two rules the routes must preserve: authority is checked **against the
+resolved row, after org scoping**, so a foreign id keeps returning 404 rather
+than confirming itself with a 403; and appointing a co-lead is deliberately
+allowed, because it only shares a subtree the caller already manages. Note
+that `getTeamAuthority` builds the tree from **non-archived** teams, so
+restoring an archived team is effectively admin-only.
+
 ## Subsystems
 
 ### Auth & multi-tenancy — `src/lib/{auth,session,magic-link,org,crypto}.ts`, `src/proxy.ts`
@@ -154,7 +181,8 @@ The core of the product: **code owns the facts, AI writes the prose.**
   Column 0 is the period label; each other column is a metric series. Metrics
   need ≥2 non-empty rows; chart series need ≥3 numeric points.
 - **Generate → send lifecycle** (`roundups.status`): `pending` → `draft`
-  (generate/regenerate, admin-only) → `sent` (send, admin-only, one-shot).
+  (generate/regenerate) → `sent` (send, one-shot). Both need `canManageTeam` on
+  the owning team, so a team lead drives their own subtree's Roundups.
   Generate refuses an empty week (409). Send records recipients, emails
   `recipient`- and `admin`-role users, and marks sent.
 - **AI key selection** happens in the generate route, not in `roundup-ai.ts`:
@@ -225,16 +253,16 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `users/invite` | POST | pre-create a member (invite) | admin |
 | `users/[id]` | PATCH/DELETE | edit role/name; remove (guards last admin) | admin |
 | `users/[id]/invite` | POST | resend invite | admin |
-| `teams` | GET/POST | org team tree w/ members; create sub-team (Business) | GET member / POST admin |
-| `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | admin |
-| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove | admin |
+| `teams` | GET/POST | org team tree w/ members (each carries `canManage`); create sub-team (Business) | GET member / POST `canCreateSubTeam` |
+| `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | `canManageTeam`, + `canArchiveTeam` / `canMoveTeam` |
+| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove | `canManageTeam` |
 | `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
 | `templates/[id]` | PATCH/DELETE | update/restore/move team; soft-delete | admin |
 | `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive | GET member / write admin |
 | `instances/[id]` | PATCH | autosave/submit answers | owner only, rejects when locked |
-| `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | admin, maxDuration 60 |
-| `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | admin, maxDuration 60 |
-| `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | admin |
+| `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | `canManageTeam`, maxDuration 60 |
+| `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | `canManageTeam`, maxDuration 60 |
+| `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | `canManageTeam` on the owning team |
 | `sheets/preview` | GET | preview a sheet's metrics | admin (docs.google.com only) |
 | `billing/checkout` | POST | Stripe Checkout URL | admin (503 if unconfigured) |
 | `billing/portal` | POST | Stripe Customer Portal | admin (needs customer) |
@@ -262,7 +290,11 @@ The core of the product: **code owns the facts, AI writes the prose.**
 5. **This is a modified Next.js.** `params` is a `Promise` (await it); there is
    no `middleware.ts`; read `node_modules/next/dist/docs/` before changing
    routes or pages.
-6. **Untrusted free-text** (contributor answers, sheet cells) is interpolated
+6. **Team authority is derived, never asserted.** Route handlers ask
+   `lib/team-authority.ts` (via `getTeamAuthority`) instead of comparing roles
+   inline, and only after the target row has been org-scoped — see "Team
+   authority (D3)".
+7. **Untrusted free-text** (contributor answers, sheet cells) is interpolated
    into the AI prompt. Injection can at worst distort prose — facts, dots, and
    chart data are code/sheet-sourced and schema-constrained — but treat
    generated prose as attacker-influenceable.

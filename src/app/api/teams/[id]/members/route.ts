@@ -3,6 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { teamMembers, teams, users } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
+import { canManageTeam } from "@/lib/team-authority";
+import { getTeamAuthority } from "@/lib/teams";
+
+const NO_AUTHORITY =
+  "You can only change the members of a team you lead — ask an admin or that team's lead.";
 
 async function orgTeam(teamId: number, orgId: number) {
   return (
@@ -15,8 +20,11 @@ async function orgTeam(teamId: number, orgId: number) {
 }
 
 // POST /api/teams/[id]/members  { userId, role? } — add a member (or change
-// their role). role: 'lead' | 'member'. Admin-only. A person can belong to
-// many teams; this only touches THIS team's row.
+// their role). role: 'lead' | 'member'. Needs canManageTeam on this team (D3),
+// so a lead can staff their own subtree. Appointing a co-lead is allowed: it
+// hands out authority over a subtree the caller already manages, so it can't
+// be used to escalate beyond themselves. A person can belong to many teams;
+// this only touches THIS team's row.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -24,9 +32,6 @@ export async function POST(
   const me = await getSessionUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
@@ -36,6 +41,10 @@ export async function POST(
   }
   if (!(await orgTeam(teamId, me.orgId))) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canManageTeam(auth, teamId)) {
+    return NextResponse.json({ error: NO_AUTHORITY }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -68,7 +77,8 @@ export async function POST(
 }
 
 // DELETE /api/teams/[id]/members?userId=N — remove a member from this team.
-// Admin-only. Their reports and other team memberships are untouched.
+// Needs canManageTeam on this team (D3). Their reports and other team
+// memberships are untouched.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -76,9 +86,6 @@ export async function DELETE(
   const me = await getSessionUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
@@ -89,6 +96,10 @@ export async function DELETE(
   }
   if (!(await orgTeam(teamId, me.orgId))) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canManageTeam(auth, teamId)) {
+    return NextResponse.json({ error: NO_AUTHORITY }, { status: 403 });
   }
 
   await db

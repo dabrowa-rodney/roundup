@@ -32,7 +32,8 @@ import {
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
 import { isSkipped } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
-import { ensureRootTeam } from "@/lib/teams";
+import { canManageTeam } from "@/lib/team-authority";
+import { ensureRootTeam, getTeamAuthority } from "@/lib/teams";
 import {
   nextPeriodStartISO,
   periodForCadence,
@@ -58,8 +59,10 @@ function generatedLabel(d: Date): string {
 }
 
 // POST /api/roundups/generate  { week?: "YYYY-MM-DD", teamId?: number }
-// Admin-only. Compiles a team's period into a draft Roundup. Without teamId
-// the org's ROOT team is targeted — identical to the pre-teams behaviour.
+// Needs canManageTeam on the target team (D3). Compiles a team's period into a
+// draft Roundup. Without teamId the org's ROOT team is targeted — identical to
+// the pre-teams behaviour — so a lead who doesn't manage the root must name
+// their own team rather than silently compiling the whole org.
 //
 // Inputs are gathered per the team's rollup_mode (see docs/DESIGN-nested-teams.md):
 //   members  → the team's own members' submitted reports in the period
@@ -70,9 +73,6 @@ export async function POST(req: NextRequest) {
   const me = await getSessionUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
     cadence: string;
     rollupMode: string;
   };
+  const defaultedToRoot = body.teamId === undefined;
   if (body.teamId !== undefined) {
     const teamId = Number(body.teamId);
     if (!Number.isInteger(teamId)) {
@@ -131,6 +132,21 @@ export async function POST(req: NextRequest) {
         .limit(1)
     )[0];
     team = row;
+  }
+
+  // Authority is checked against the RESOLVED team, after org scoping — so a
+  // foreign id still 404s. Defaulting to root only works for callers who
+  // actually manage the root team.
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canManageTeam(auth, team.id)) {
+    return NextResponse.json(
+      {
+        error: defaultedToRoot
+          ? "You don't manage the organisation-wide Roundup — choose one of your teams and send its teamId."
+          : "You can only generate Roundups for a team you lead.",
+      },
+      { status: 403 },
+    );
   }
 
   // The team's cadence defines the period (calendar-aligned, D4).

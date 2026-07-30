@@ -38,10 +38,12 @@ reasoning recorded so they aren't lost.
   the template's *live* team, so a same-cadence template move re-attributes its
   history. Snapshotting the team on each instance at creation would make history
   immutable. (Cross-cadence moves are already blocked.)
-- **User-delete safety** — deleting a user can leave a team with no lead (→ a
-  sub-team send resolves to zero recipients) and cascade-deletes
-  `roundup_recipients` rows on already-*sent* roundups. Block deleting a sole
-  lead, and snapshot recipient identity on sent roundups instead of cascading.
+- **Sent-roundup recipient history** — deleting a user cascade-deletes their
+  `roundup_recipients` rows, including on already-*sent* roundups, so the
+  historical audience quietly shrinks. Snapshot recipient identity (email at
+  send time) instead of cascading. (The other half of this item — a team losing
+  its only lead — is **fixed**: `DELETE /api/users/[id]` now 409s on a sole
+  lead.)
 - **Restore semantics (F6)** — archiving parent A after independently archiving
   child B, then restoring A, resurrects B. Track archive origin to fix.
 - ~~**Downgrade enforcement**~~ — **decided and documented.** Existing
@@ -52,8 +54,14 @@ reasoning recorded so they aren't lost.
   the team's cadence); drop it or assert it mirrors the team.
 - ~~**FK naming divergence**~~ — fixed in `0009`: a fresh `reset.sql` DB and a
   migrated one now produce byte-identical schemas (verified against Postgres 16).
-- **D3 — team leads managing their own subtree**: structure/generation actions
-  remain org-admin-only; the per-team lead role is stored and distributed to.
+- ~~**D3 — team leads managing their own subtree**~~ — **implemented.** The
+  rules live in `src/lib/team-authority.ts` (pure, 16 tests) and are enforced by
+  `teams`, `teams/[id]`, `teams/[id]/members`, `roundups/generate`,
+  `roundups/send` and `roundups/[id]/recipients`. A lead manages the subtree
+  rooted at their team, cannot archive or move that team itself, and cannot
+  reach outside it; `GET /api/teams` returns `canManage` per team so the UI
+  follows. One knock-on: authority is derived from live teams only, so
+  *restoring* an archived team stays admin-only.
 
 ## 1. Goal
 

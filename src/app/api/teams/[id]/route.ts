@@ -5,7 +5,13 @@ import { teams } from "@/db/schema";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import {
+  canArchiveTeam,
+  canManageTeam,
+  canMoveTeam,
+} from "@/lib/team-authority";
+import {
   collectSubtreeIds,
+  getTeamAuthority,
   teamDepth,
   wouldCreateCycle,
   MAX_TEAM_DEPTH,
@@ -19,8 +25,10 @@ const ROLLUPS: RollupMode[] = ["members", "children", "both"];
 const TEMPLATE_MODES: TemplateMode[] = ["shared", "per_member"];
 
 // PATCH /api/teams/[id] — rename, re-parent, reconfigure, archive/restore.
-// Admin-only. The root team cannot be re-parented or archived. Archiving is
-// subtree-wide (a team's children go with it); restore is subtree-wide too.
+// Authority per D3: configuring needs canManageTeam, archiving canArchiveTeam,
+// moving canMoveTeam (see lib/team-authority.ts). The root team cannot be
+// re-parented or archived. Archiving is subtree-wide (a team's children go with
+// it); restore is subtree-wide too.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -28,9 +36,6 @@ export async function PATCH(
   const me = await getSessionUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
@@ -51,8 +56,36 @@ export async function PATCH(
   }
   const isRoot = team.parentTeamId === null;
 
+  // Only now that the team is known to be in the caller's org (a foreign id
+  // already 404'd) do we ask what they're allowed to do with it.
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+
+  // Baseline: touching a team at all (rename, cadence, rollup/template mode)
+  // needs manage rights. Archiving and moving are stricter — both imply this —
+  // and are gated again below.
+  if (!canManageTeam(auth, teamId)) {
+    return NextResponse.json(
+      {
+        error:
+          "You can only change a team you lead — ask an admin or that team's lead.",
+      },
+      { status: 403 },
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
   const set: Partial<typeof teams.$inferInsert> = {};
+
+  if (body.archived !== undefined && !canArchiveTeam(auth, teamId)) {
+    return NextResponse.json(
+      {
+        error: auth.leadTeamIds.includes(teamId)
+          ? "You can't archive the team you lead — only its parent's lead or an admin can."
+          : "You can only archive teams inside a team you lead.",
+      },
+      { status: 403 },
+    );
+  }
 
   if (body.name !== undefined) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
@@ -128,6 +161,18 @@ export async function PATCH(
     const parent = allTeams.find((t) => t.id === newParentId);
     if (!parent) {
       return NextResponse.json({ error: "Parent team not found" }, { status: 404 });
+    }
+    // Both ends must sit inside the mover's authority, and a lead may not
+    // relocate the team their own authority derives from.
+    if (!canMoveTeam(auth, teamId, newParentId)) {
+      return NextResponse.json(
+        {
+          error: auth.leadTeamIds.includes(teamId)
+            ? "You can't move the team you lead — only its parent's lead or an admin can."
+            : "You can only move teams within the part of the organisation you lead.",
+        },
+        { status: 403 },
+      );
     }
     if (wouldCreateCycle(allTeams, teamId, newParentId)) {
       return NextResponse.json(
