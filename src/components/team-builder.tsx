@@ -464,16 +464,21 @@ function ConfigureTeamModal({
             className={inputClass}
           >
             {(Object.keys(TEMPLATE_LABEL) as TemplateMode[]).map((m) => (
-              // "Shared" isn't wired up yet — offer per-member only for now.
-              <option key={m} value={m} disabled={m === "shared"}>
+              <option key={m} value={m}>
                 {TEMPLATE_LABEL[m]}
-                {m === "shared" ? " (coming soon)" : ""}
               </option>
             ))}
           </select>
           <p className="mt-1 text-[12.5px] text-muted">
             {TEMPLATE_HELP[templateMode]}
           </p>
+          {templateMode !== team.templateMode && (
+            <p className="mt-2 rounded-lg bg-warn-soft px-3 py-2 text-[12.5px] text-warn-ink">
+              {templateMode === "shared"
+                ? "Every member of this team will be expected to file each of its reports from the next period. Per-member assignments are kept, and come back if you switch again."
+                : "Only the people assigned to each report will be expected to file it. Anyone with nothing assigned will have no report to fill in."}
+            </p>
+          )}
         </div>
         {error && <ErrorNote message={error} />}
         <ModalFooter

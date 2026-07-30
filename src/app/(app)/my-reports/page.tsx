@@ -6,12 +6,12 @@ import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import {
   questions,
-  reportAssignees,
   reportInstances,
   reportTemplates,
   teams,
   users,
 } from "@/db/schema";
+import { loadAssignedTemplateIds } from "@/lib/assignees";
 import { Screen } from "@/components/screen";
 import { ProgressBar, SectionLabel, StatusPill } from "@/components/ui";
 import type { ReportStatus } from "@/lib/types";
@@ -69,7 +69,7 @@ export default async function MyReportsPage() {
   const me = email
     ? (
         await db
-          .select({ id: users.id })
+          .select({ id: users.id, orgId: users.orgId })
           .from(users)
           .where(eq(users.email, email))
           .limit(1)
@@ -80,31 +80,24 @@ export default async function MyReportsPage() {
   let previous: PreviousWeek[] = [];
 
   if (me) {
-    // Templates assigned to me (non-archived), with their team's cadence —
-    // each template's "current" instance is keyed by ITS team's period.
-    const assigned = await db
-      .select({
-        id: reportTemplates.id,
-        name: reportTemplates.name,
-        area: reportTemplates.area,
-        teamCadence: teams.cadence,
-      })
-      .from(reportAssignees)
-      .innerJoin(
-        reportTemplates,
-        eq(reportAssignees.templateId, reportTemplates.id),
-      )
-      .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
-      .where(
-        and(
-          eq(reportAssignees.userId, me.id),
-          isNull(reportTemplates.archivedAt),
-          // An archived team stops accepting reports — hide its templates so
-          // members don't file into a team whose roundup can't be generated.
-          isNull(teams.archivedAt),
-        ),
-      )
-      .orderBy(reportTemplates.name);
+    // The reports I owe (non-archived template AND non-archived team — an
+    // archived team stops accepting reports, so filing into it would produce a
+    // report no roundup can pick up). Assignment is either an explicit row or
+    // membership of a team that shares its templates; lib/assignees.ts decides.
+    const owedIds = await loadAssignedTemplateIds(me.orgId, me.id);
+    const assigned = owedIds.length
+      ? await db
+          .select({
+            id: reportTemplates.id,
+            name: reportTemplates.name,
+            area: reportTemplates.area,
+            teamCadence: teams.cadence,
+          })
+          .from(reportTemplates)
+          .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
+          .where(inArray(reportTemplates.id, owedIds))
+          .orderBy(reportTemplates.name)
+      : [];
 
     const ids = assigned.map((a) => a.id);
     const now = new Date();

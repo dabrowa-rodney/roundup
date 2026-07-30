@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { reportTemplates, reportAssignees, questions, teams, users } from "@/db/schema";
+import { reportTemplates, questions, teams, users } from "@/db/schema";
 import { and, eq, isNull, sql, asc, inArray } from "drizzle-orm";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import { ensureRootTeam } from "@/lib/teams";
+import { loadAssignees } from "@/lib/assignees";
 
-// GET /api/templates — the caller's org's templates with question counts + assignees
+// GET /api/templates — the caller's org's templates with question counts and
+// their EFFECTIVE assignees (see lib/assignees.ts: explicit rows, or the whole
+// team on a team that shares its templates)
 export async function GET() {
   const me = await getSessionUser();
   if (!me) {
@@ -42,24 +45,26 @@ export async function GET() {
 
   const countMap = new Map(qCounts.map((q) => [q.templateId, q.count]));
 
-  // Assignees per template.
-  const assignees = templateIds.length
+  // Who is expected to file each template. On a `shared` team that's every
+  // member, not the (unused) assignee rows — so the UI shows what will actually
+  // happen. lib/assignees.ts owns the rule.
+  const pairs = await loadAssignees(templateIds);
+  const people = pairs.length
     ? await db
-        .select({
-          templateId: reportAssignees.templateId,
-          userId: reportAssignees.userId,
-          userName: users.name,
-          userEmail: users.email,
-        })
-        .from(reportAssignees)
-        .innerJoin(users, eq(reportAssignees.userId, users.id))
-        .where(inArray(reportAssignees.templateId, templateIds))
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(
+          inArray(users.id, [...new Set(pairs.map((p) => p.userId))]),
+        )
     : [];
+  const person = new Map(people.map((p) => [p.id, p]));
 
   const assigneeMap = new Map<number, { id: number; name: string | null; email: string }[]>();
-  for (const a of assignees) {
+  for (const a of pairs) {
+    const who = person.get(a.userId);
+    if (!who) continue;
     const list = assigneeMap.get(a.templateId) || [];
-    list.push({ id: a.userId, name: a.userName, email: a.userEmail });
+    list.push({ id: who.id, name: who.name, email: who.email });
     assigneeMap.set(a.templateId, list);
   }
 

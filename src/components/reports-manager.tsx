@@ -575,6 +575,9 @@ export function ReportsManager() {
   const selectedTeam = selectedTemplate
     ? teams.find((t) => t.id === selectedTemplate.teamId)
     : undefined;
+  // A shared team's roster is its assignee list, so assignment isn't editable
+  // per report — see lib/assignees.ts.
+  const sharedTemplateMode = selectedTeam?.templateMode === "shared";
 
   // Active templates grouped by team — root first, then tree order. Archived
   // teams still come back from /api/teams, so their templates group under the
@@ -1027,6 +1030,10 @@ export function ReportsManager() {
             {moveError && (
               <p className="mb-2.5 text-[12.5px] text-bad">{moveError}</p>
             )}
+            {/* On a team that shares its templates the roster IS the assignee
+                list, so it's shown read-only — editing rows here would look
+                like it did something and wouldn't. Switch the team back to
+                per-member assignment to hand-pick again. */}
             <div className="mb-[18px] flex flex-wrap items-center gap-2">
               <span className="text-[12px] text-muted">Assigned to</span>
               {selectedTemplate.assignees.length > 0 ? (
@@ -1036,22 +1043,28 @@ export function ReportsManager() {
                     className="inline-flex items-center gap-1 rounded-[7px] bg-accent-soft py-0.5 pl-[9px] pr-1.5 text-[12px] font-semibold text-accent"
                   >
                     {a.name || a.email}
-                    <button
-                      onClick={() => toggleAssignee(a.id)}
-                      disabled={savingAssignees}
-                      aria-label={`Unassign ${a.name || a.email}`}
-                      className="rounded-full p-0.5 text-accent/60 hover:bg-accent/10 hover:text-accent disabled:opacity-40"
-                    >
-                      <X size={11} />
-                    </button>
+                    {!sharedTemplateMode && (
+                      <button
+                        onClick={() => toggleAssignee(a.id)}
+                        disabled={savingAssignees}
+                        aria-label={`Unassign ${a.name || a.email}`}
+                        className="rounded-full p-0.5 text-accent/60 hover:bg-accent/10 hover:text-accent disabled:opacity-40"
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
                   </span>
                 ))
               ) : (
-                <span className="text-[12px] italic text-muted">No one assigned</span>
+                <span className="text-[12px] italic text-muted">
+                  {sharedTemplateMode
+                    ? "No one in this team yet"
+                    : "No one assigned"}
+                </span>
               )}
 
               {/* Assign picker */}
-              <div className="relative">
+              <div className={sharedTemplateMode ? "hidden" : "relative"}>
                 <button
                   onClick={() => setShowAssign((v) => !v)}
                   className="rounded-[7px] border border-dashed border-line px-[9px] py-0.5 text-[12px] text-muted hover:border-accent hover:text-accent"
@@ -1113,10 +1126,10 @@ export function ReportsManager() {
                   </>
                 )}
               </div>
-              {selectedTeam?.templateMode === "shared" && (
+              {sharedTemplateMode && (
                 <span className="w-full text-[12px] italic leading-[1.5] text-muted">
-                  This team uses one shared report — every member is included
-                  automatically
+                  This team shares its reports — every member is expected to
+                  file this one, so the list follows the team
                 </span>
               )}
             </div>

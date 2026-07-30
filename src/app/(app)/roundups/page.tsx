@@ -5,7 +5,6 @@ import { getSessionUser } from "@/lib/session";
 import { Screen } from "@/components/screen";
 import { db } from "@/db";
 import {
-  reportAssignees,
   reportInstances,
   reportTemplates,
   roundups,
@@ -22,6 +21,7 @@ import {
   weekRange,
   type PeriodType,
 } from "@/lib/dates";
+import { loadAssignees } from "@/lib/assignees";
 import { hasAnyTeamAuthority } from "@/lib/team-authority";
 import { ensureRootTeam, getTeamAuthority } from "@/lib/teams";
 
@@ -224,29 +224,24 @@ export default async function RoundupsPage({
   const closeDay = settingsRow?.closeDay ?? "Sunday";
   const closeTime = settingsRow?.closeTime ?? "20:00";
 
-  // Reports-in counts. Root keeps the original org-wide weekly logic; a
+  // Reports-in counts. "Expected" counts whoever OWES a report — assignee rows,
+  // or every member of a team that shares its templates (lib/assignees.ts). Root keeps the original org-wide weekly logic; a
   // selected sub-team scopes both sides to ITS templates, bucketing weekly
   // instances into the team's period windows via the period key.
   let totalExpected = 0;
   const submittedByPeriod = new Map<string, number>();
 
   if (isRoot) {
-    totalExpected =
-      (
-        await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(reportAssignees)
-          .innerJoin(
-            reportTemplates,
-            eq(reportAssignees.templateId, reportTemplates.id),
-          )
-          .where(
-            and(
-              eq(reportTemplates.orgId, me.orgId),
-              isNull(reportTemplates.archivedAt),
-            ),
-          )
-      )[0]?.count ?? 0;
+    const orgTemplates = await db
+      .select({ id: reportTemplates.id })
+      .from(reportTemplates)
+      .where(
+        and(
+          eq(reportTemplates.orgId, me.orgId),
+          isNull(reportTemplates.archivedAt),
+        ),
+      );
+    totalExpected = (await loadAssignees(orgTemplates.map((t) => t.id))).length;
 
     const weekAgg = await db
       .select({
@@ -258,23 +253,17 @@ export default async function RoundupsPage({
       .groupBy(reportInstances.weekStart);
     for (const a of weekAgg) submittedByPeriod.set(a.weekStart, a.submitted);
   } else {
-    totalExpected =
-      (
-        await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(reportAssignees)
-          .innerJoin(
-            reportTemplates,
-            eq(reportAssignees.templateId, reportTemplates.id),
-          )
-          .where(
-            and(
-              eq(reportTemplates.orgId, me.orgId),
-              eq(reportTemplates.teamId, selectedTeam.id),
-              isNull(reportTemplates.archivedAt),
-            ),
-          )
-      )[0]?.count ?? 0;
+    const teamTemplates = await db
+      .select({ id: reportTemplates.id })
+      .from(reportTemplates)
+      .where(
+        and(
+          eq(reportTemplates.orgId, me.orgId),
+          eq(reportTemplates.teamId, selectedTeam.id),
+          isNull(reportTemplates.archivedAt),
+        ),
+      );
+    totalExpected = (await loadAssignees(teamTemplates.map((t) => t.id))).length;
 
     // Stage-3 instances carry period starts in weekStart, so keying each row
     // by its containing period start is exact for weekly teams and correct

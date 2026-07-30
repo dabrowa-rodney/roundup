@@ -30,10 +30,15 @@ reasoning recorded so they aren't lost.
   never wired to materialize assignees, so a shared team would open no instances.
 
 **Deferred (with rationale):**
-- **Full `'shared'` template mode** — implement by treating a shared team's
-  members as its effective assignees in the lifecycle open step, generate's
-  `totalExpected`/instance gather, and the reminders query. Until then it's
-  disabled, and per-member (the default) is the only mode.
+- ~~**Full `'shared'` template mode**~~ — **implemented.** `src/lib/assignees.ts`
+  now owns "who owes a report" for both modes and every caller goes through it:
+  the lifecycle open step, reminders, generate's `totalExpected`, the Roundups
+  expected counts, `GET /api/templates`, and the my-reports list *and* form
+  access check (without that last one a shared team's members couldn't open the
+  report). Assignee rows are ignored rather than merged while shared, so the
+  switch is reversible in both directions. Re-enabled in the API and the
+  Configure modal, with a warning on the change; the Reports screen shows a
+  shared team's assignee list read-only.
 - **`report_instances.teamId` snapshot** — roll-ups attribute member reports by
   the template's *live* team, so a same-cadence template move re-attributes its
   history. Snapshotting the team on each instance at creation would make history

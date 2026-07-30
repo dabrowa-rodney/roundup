@@ -130,13 +130,10 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    // 'shared' isn't implemented yet — see teams POST for the rationale.
-    if (body.templateMode === "shared") {
-      return NextResponse.json(
-        { error: "Shared templates aren't available yet" },
-        { status: 400 },
-      );
-    }
+    // Both modes are live. Switching to 'shared' makes every member of the team
+    // an assignee of its templates from the next period the lifecycle opens;
+    // switching back restores the explicit assignee rows, which are left
+    // untouched while shared (see lib/assignees.ts).
     set.templateMode = body.templateMode;
   }
 

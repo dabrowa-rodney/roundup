@@ -89,7 +89,33 @@ until sub-teams exist). Reports roll UP the tree:
 - Tree safety lives in `src/lib/teams.ts`: `wouldCreateCycle`,
   `MAX_TEAM_DEPTH` (8), subtree walks — the DB does not enforce acyclicity.
 - Nested teams + non-weekly cadences are **Business-tier** (D5), gated at
-  sub-team creation and cadence change.
+  sub-team creation and cadence change. `template_mode` is not plan-gated — a
+  flat Free org can still have everyone file one shared report.
+
+### Who owes a report — `src/lib/assignees.ts`
+
+`teams.template_mode` decides how a team assigns its reports, and **every**
+"who owes one" question funnels through this module so the two modes can't drift
+apart between callers:
+
+- `per_member` (default) — the explicit `report_assignees` rows.
+- `shared` — every member of the template's team. Assignee rows are **ignored**,
+  not merged, so switching a team between modes is reversible: the rows sit
+  untouched while shared and come back on the way out. A shared team is meant to
+  have one template; with several, each member owes each one.
+
+`resolveAssignees()` is the pure rule (tested); `loadAssignees(templateIds)` and
+`loadAssignedTemplateIds(orgId, userId)` wrap it with queries. Callers: the cron
+lifecycle open step, the reminders query, generate's `totalExpected`, the
+Roundups pages' expected counts, `GET /api/templates` (so the UI shows who will
+actually file), and both my-reports surfaces — the list and the form's access
+check, which is what lets a shared team's member open the report at all.
+Templates whose team is archived are excluded everywhere, since an archived team
+stops accepting reports.
+
+On a shared team the Reports screen shows the assignee list read-only: the team
+roster *is* the list, so editing rows there would look like it did something and
+wouldn't.
 
 ### Team authority (D3) — `src/lib/team-authority.ts`
 

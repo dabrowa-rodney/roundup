@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   emailLog,
   organisations,
-  reportAssignees,
   reportInstances,
   reportTemplates,
   settings,
@@ -18,6 +17,7 @@ import {
   type ScheduleSettings,
 } from "@/lib/lifecycle";
 import { emailConfigured, reminderEmail, sendEmail } from "@/lib/email";
+import { loadAssignees } from "@/lib/assignees";
 import { getSessionUser } from "@/lib/session";
 
 export const maxDuration = 60;
@@ -121,31 +121,13 @@ export async function GET(req: NextRequest) {
       .returning({ kind: emailLog.kind });
     if (claimed.length === 0) continue;
 
-    // Everyone in this org assigned an active WEEKLY report whose instance
-    // isn't submitted/locked. Reminder slots are week-shaped, so they only
-    // apply to weekly-cadence teams — monthly/quarterly reports don't nag.
-    const pending = await db
-      .select({
-        email: users.email,
-        name: users.name,
-        report: reportTemplates.name,
-        status: reportInstances.status,
-      })
-      .from(reportAssignees)
-      .innerJoin(users, eq(reportAssignees.userId, users.id))
-      .innerJoin(
-        reportTemplates,
-        eq(reportAssignees.templateId, reportTemplates.id),
-      )
+    // Everyone in this org who owes an active WEEKLY report. Reminder slots are
+    // week-shaped, so they only apply to weekly-cadence teams — monthly and
+    // quarterly reports don't nag.
+    const weeklyTemplates = await db
+      .select({ id: reportTemplates.id, name: reportTemplates.name })
+      .from(reportTemplates)
       .innerJoin(teams, eq(reportTemplates.teamId, teams.id))
-      .leftJoin(
-        reportInstances,
-        and(
-          eq(reportInstances.templateId, reportAssignees.templateId),
-          eq(reportInstances.userId, reportAssignees.userId),
-          eq(reportInstances.weekStart, weekStart),
-        ),
-      )
       .where(
         and(
           eq(reportTemplates.orgId, orgId),
@@ -155,14 +137,51 @@ export async function GET(req: NextRequest) {
           eq(teams.cadence, "weekly"),
         ),
       );
+    // Who owes what: assignee rows, or every member of a `shared` team.
+    const owed = await loadAssignees(weeklyTemplates.map((t) => t.id));
+    if (owed.length === 0) continue;
+
+    const templateName = new Map(weeklyTemplates.map((t) => [t.id, t.name]));
+    const userIds = [...new Set(owed.map((o) => o.userId))];
+    const [people, instanceRows] = await Promise.all([
+      db
+        .select({ id: users.id, email: users.email, name: users.name })
+        .from(users)
+        .where(and(eq(users.orgId, orgId), inArray(users.id, userIds))),
+      db
+        .select({
+          templateId: reportInstances.templateId,
+          userId: reportInstances.userId,
+          status: reportInstances.status,
+        })
+        .from(reportInstances)
+        .where(
+          and(
+            inArray(
+              reportInstances.templateId,
+              weeklyTemplates.map((t) => t.id),
+            ),
+            eq(reportInstances.weekStart, weekStart),
+          ),
+        ),
+    ]);
+    const person = new Map(people.map((p) => [p.id, p]));
+    const statusOf = new Map(
+      instanceRows.map((r) => [`${r.templateId}:${r.userId}`, r.status]),
+    );
 
     const byUser = new Map<string, { name: string; reports: string[] }>();
-    for (const p of pending) {
-      if (p.status === "submitted" || p.status === "locked") continue;
+    for (const o of owed) {
+      // No instance yet still counts as outstanding — that's the nudge's point.
+      const status = statusOf.get(`${o.templateId}:${o.userId}`);
+      if (status === "submitted" || status === "locked") continue;
+      const who = person.get(o.userId);
+      const report = templateName.get(o.templateId);
+      if (!who || !report) continue;
       const entry =
-        byUser.get(p.email) ?? { name: p.name || p.email, reports: [] };
-      entry.reports.push(p.report);
-      byUser.set(p.email, entry);
+        byUser.get(who.email) ?? { name: who.name || who.email, reports: [] };
+      entry.reports.push(report);
+      byUser.set(who.email, entry);
     }
 
     const closeLabel = `${sched.closeDay} ${sched.closeTime}`;

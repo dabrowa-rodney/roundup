@@ -3,7 +3,6 @@ import { and, eq, inArray, isNotNull, isNull, lt, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   organisations,
-  reportAssignees,
   reportInstances,
   reportTemplates,
   settings,
@@ -16,6 +15,7 @@ import {
   type ScheduleSettings,
 } from "@/lib/lifecycle";
 import { getSessionUser } from "@/lib/session";
+import { loadAssignees } from "@/lib/assignees";
 import { sweepRateLimits } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
@@ -129,15 +129,11 @@ export async function GET(req: NextRequest) {
       }
 
       // 2) Open the current period (once its open time has passed): ensure an
-      //    empty instance exists for every active assignee.
+      //    empty instance exists for everyone expected to file. On a `shared`
+      //    team that's every member; on a per_member team, the assignee rows
+      //    (lib/assignees.ts owns the rule).
       if (now.getTime() >= periodOpenInstant(period, periodIso, sched).getTime()) {
-        const assignees = await db
-          .select({
-            templateId: reportAssignees.templateId,
-            userId: reportAssignees.userId,
-          })
-          .from(reportAssignees)
-          .where(inArray(reportAssignees.templateId, templateIds));
+        const assignees = await loadAssignees(templateIds);
 
         if (assignees.length > 0) {
           const inserted = await db

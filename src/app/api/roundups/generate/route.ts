@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
   emailLog,
   organisations,
   questions,
-  reportAssignees,
   reportInstances,
   reportTemplates,
   roundups,
@@ -32,6 +31,7 @@ import {
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
 import { isSkipped } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
+import { loadAssignees } from "@/lib/assignees";
 import { canManageTeam } from "@/lib/team-authority";
 import { ensureRootTeam, getTeamAuthority } from "@/lib/teams";
 import {
@@ -354,24 +354,21 @@ export async function POST(req: NextRequest) {
     answers: answersByInstance.get(i.id) ?? [],
   }));
 
-  // Expected member reports = assignees of THIS team's active templates.
-  const totalExpected =
-    (
-      await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(reportAssignees)
-        .innerJoin(
-          reportTemplates,
-          eq(reportAssignees.templateId, reportTemplates.id),
-        )
-        .where(
-          and(
-            eq(reportTemplates.orgId, me.orgId),
-            eq(reportTemplates.teamId, team.id),
-            isNull(reportTemplates.archivedAt),
-          ),
-        )
-    )[0]?.count ?? 0;
+  // Expected member reports = whoever owes one of THIS team's active templates:
+  // assignee rows, or every member if the team shares its templates.
+  const expectedTemplates = await db
+    .select({ id: reportTemplates.id })
+    .from(reportTemplates)
+    .where(
+      and(
+        eq(reportTemplates.orgId, me.orgId),
+        eq(reportTemplates.teamId, team.id),
+        isNull(reportTemplates.archivedAt),
+      ),
+    );
+  const totalExpected = (
+    await loadAssignees(expectedTemplates.map((t) => t.id))
+  ).length;
 
   // Pull metrics from this team's active templates' connected Google Sheets.
   const srcRows = await db
