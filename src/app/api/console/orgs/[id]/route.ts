@@ -82,12 +82,19 @@ export async function PATCH(
 
   // Grant/revoke complimentary access. Revoking never touches a real Stripe
   // subscription — it only applies when the org isn't on a paid plan.
+  // complimentaryUntil is cleared in BOTH directions. A console grant is
+  // permanent, which is represented by a NULL end date — inheriting a leftover
+  // date from a previously-redeemed code would silently time-limit the grant
+  // (or, if that date has passed, make it dead on arrival). Revoking likewise
+  // leaves no stale date behind for a future grant to pick up.
   if (body.plan === "complimentary") {
     orgUpdates.plan = "complimentary";
     orgUpdates.planStatus = null;
+    orgUpdates.complimentaryUntil = null;
   } else if (body.plan === "free") {
     orgUpdates.plan = "free";
     orgUpdates.planStatus = null;
+    orgUpdates.complimentaryUntil = null;
   }
 
   if (Object.keys(orgUpdates).length > 0) {

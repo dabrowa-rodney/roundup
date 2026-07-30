@@ -20,6 +20,33 @@ export interface ScheduleSettings {
   timezone: string; // e.g. "Europe/London"
 }
 
+/** The day names the schedule fields accept. */
+export const DAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+/**
+ * Is `tz` an IANA zone this runtime understands? Guards stored settings: the
+ * schedule helpers below feed the value to Intl.DateTimeFormat, which THROWS
+ * on an unknown zone — and the nightly crons walk every org in one request, so
+ * one bad value would otherwise break the job for every other tenant.
+ */
+export function isValidTimeZone(tz: string): boolean {
+  if (!tz.trim()) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const DAY_OFFSET: Record<string, number> = {
   Monday: 0,
   Tuesday: 1,

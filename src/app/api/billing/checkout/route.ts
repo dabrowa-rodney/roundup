@@ -87,17 +87,44 @@ export async function POST(req: NextRequest) {
   }
 
   const customerId = await getOrCreateCustomerId(org);
-  const session = await stripe().checkout.sessions.create({
-    mode: "subscription",
+  const base = {
+    mode: "subscription" as const,
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    // Pre-applied discount, or the manual "enter a code" box when there's none.
-    ...(discounts ? { discounts } : { allow_promotion_codes: true }),
     subscription_data: { metadata: { orgId: String(org.id) } },
     metadata: { orgId: String(org.id) },
     success_url: appUrl("/settings?billing=success"),
     cancel_url: appUrl("/settings?billing=cancelled"),
-  });
+  };
 
+  // `active: true` doesn't mean the code APPLIES here — a promotion code can be
+  // restricted by minimum amount, first-transaction, a specific customer, or a
+  // coupon that excludes this product, and Stripe then rejects the session.
+  // Fall back to the manual code box rather than failing checkout outright.
+  if (discounts) {
+    try {
+      const session = await stripe().checkout.sessions.create({
+        ...base,
+        discounts,
+      });
+      return NextResponse.json({ url: session.url });
+    } catch {
+      const session = await stripe().checkout.sessions.create({
+        ...base,
+        allow_promotion_codes: true,
+      });
+      return NextResponse.json({
+        url: session.url,
+        promoRejected: true,
+        warning:
+          "That discount code couldn't be applied to this plan — you can try entering it on the payment page.",
+      });
+    }
+  }
+
+  const session = await stripe().checkout.sessions.create({
+    ...base,
+    allow_promotion_codes: true,
+  });
   return NextResponse.json({ url: session.url });
 }

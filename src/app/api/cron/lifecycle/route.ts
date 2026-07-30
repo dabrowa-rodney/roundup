@@ -16,6 +16,7 @@ import {
   type ScheduleSettings,
 } from "@/lib/lifecycle";
 import { getSessionUser } from "@/lib/session";
+import { sweepRateLimits } from "@/lib/rate-limit";
 
 export const maxDuration = 60;
 
@@ -66,7 +67,12 @@ export async function GET(req: NextRequest) {
   let locked = 0;
   let created = 0;
 
+  const failedOrgs: number[] = [];
+
   for (const orgId of orgIds) {
+   // One tenant's bad data (e.g. an unparseable schedule) must never break the
+   // shared nightly job for every other organisation — isolate each org.
+   try {
     const row = (
       await db.select().from(settings).where(eq(settings.orgId, orgId)).limit(1)
     )[0];
@@ -152,6 +158,9 @@ export async function GET(req: NextRequest) {
         }
       }
     }
+   } catch {
+    failedOrgs.push(orgId);
+   }
   }
 
   // 3) Purge templates soft-deleted more than 7 days ago — permanent. The
@@ -190,13 +199,21 @@ export async function GET(req: NextRequest) {
     )
     .returning({ id: organisations.id });
 
+  // Keep the fixed-window counters from growing without bound; anything older
+  // than a day is long past its window.
+  const sweptRateLimits = await sweepRateLimits(
+    new Date(now.getTime() - 24 * 60 * 60 * 1000),
+  );
+
   return NextResponse.json({
     ok: true,
     week: weekIso,
+    sweptRateLimits,
     orgs: orgIds.length,
     locked,
     created,
     purged: purgeable.length,
     compExpired: expiredComp.length,
+    ...(failedOrgs.length > 0 ? { failedOrgs } : {}),
   });
 }

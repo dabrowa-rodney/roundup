@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appUrl, emailConfigured, magicLinkEmail, sendEmail } from "@/lib/email";
 import { createLoginToken } from "@/lib/magic-link";
+import { clientIp, rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -23,6 +24,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Enter a valid email address" },
       { status: 400 },
+    );
+  }
+
+  // Unauthenticated and it sends mail, so it's abusable two ways: bombing one
+  // address, and burning send quota in bulk. Limit per address (each request
+  // also invalidates that address's previous link, so this protects a
+  // legitimate user's in-flight link too) and per IP across addresses.
+  // The response shape stays identical either way — still no enumeration.
+  const perEmail = await rateLimit(`magic:email:${email}`, 5, 60 * 60 * 1000);
+  const perIp = await rateLimit(
+    `magic:ip:${clientIp(req.headers)}`,
+    20,
+    60 * 60 * 1000,
+  );
+  if (!perEmail.ok || !perIp.ok) {
+    const blocked = !perEmail.ok ? perEmail : perIp;
+    return NextResponse.json(
+      { error: "Too many requests — try again later." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(retryAfterSeconds(blocked)) },
+      },
     );
   }
 

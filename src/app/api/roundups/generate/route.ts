@@ -300,7 +300,19 @@ export async function POST(req: NextRequest) {
       })
       .from(answers)
       .innerJoin(questions, eq(answers.questionId, questions.id))
-      .where(inArray(answers.instanceId, instIds));
+      .innerJoin(
+        reportTemplates,
+        eq(questions.templateId, reportTemplates.id),
+      )
+      .where(
+        and(
+          inArray(answers.instanceId, instIds),
+          // Defence in depth: only ever read questions belonging to THIS
+          // team's templates, so a stray answer row can't pull another
+          // organisation's question text into this Roundup.
+          eq(reportTemplates.teamId, team.id),
+        ),
+      );
 
     for (const r of rows) {
       // Deliberately skipped questions stay out of the Roundup entirely.

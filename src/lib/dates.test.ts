@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  addMonthsClamped,
   greeting,
   isoWeek,
   mondayISO,
@@ -169,5 +170,34 @@ describe("nextPeriodStartISO", () => {
   it("rolls quarters and years", () => {
     expect(nextPeriodStartISO("quarter", "2026-04-01")).toBe("2026-07-01");
     expect(nextPeriodStartISO("quarter", "2026-10-01")).toBe("2027-01-01");
+  });
+});
+
+describe("addMonthsClamped", () => {
+  const d = (s: string) => new Date(s);
+  it("clamps instead of overflowing into the next month", () => {
+    // Plain setUTCMonth would give 3 March here.
+    expect(addMonthsClamped(d("2026-01-31T12:00:00Z"), 1).toISOString()).toBe(
+      "2026-02-28T12:00:00.000Z",
+    );
+    expect(addMonthsClamped(d("2028-01-31T12:00:00Z"), 1).toISOString()).toBe(
+      "2028-02-29T12:00:00.000Z", // leap year
+    );
+    expect(addMonthsClamped(d("2026-08-31T00:00:00Z"), 3).toISOString()).toBe(
+      "2026-11-30T00:00:00.000Z",
+    );
+  });
+  it("keeps the day when the target month is long enough", () => {
+    expect(addMonthsClamped(d("2026-03-15T09:30:00Z"), 3).toISOString()).toBe(
+      "2026-06-15T09:30:00.000Z",
+    );
+  });
+  it("rolls the year over", () => {
+    expect(addMonthsClamped(d("2026-07-10T00:00:00Z"), 12).toISOString()).toBe(
+      "2027-07-10T00:00:00.000Z",
+    );
+    expect(addMonthsClamped(d("2026-07-10T00:00:00Z"), 60).toISOString()).toBe(
+      "2031-07-10T00:00:00.000Z",
+    );
   });
 });

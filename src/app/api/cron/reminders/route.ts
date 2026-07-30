@@ -66,7 +66,12 @@ export async function GET(req: NextRequest) {
   let totalSent = 0;
   const perOrg: Record<number, { claimed: string[]; sent: number }> = {};
 
+  const failedOrgs: number[] = [];
+
   for (const orgId of orgIds) {
+   // Isolate each org: a single unparseable schedule must not stop every other
+   // organisation's reminders from going out.
+   try {
     const row = (
       await db.select().from(settings).where(eq(settings.orgId, orgId)).limit(1)
     )[0];
@@ -190,6 +195,9 @@ export async function GET(req: NextRequest) {
 
     totalSent += sent;
     perOrg[orgId] = { claimed: claimed.map((c) => c.kind), sent };
+   } catch {
+    failedOrgs.push(orgId);
+   }
   }
 
   return NextResponse.json({
@@ -197,5 +205,6 @@ export async function GET(req: NextRequest) {
     orgs: orgIds.length,
     sent: totalSent,
     perOrg,
+    ...(failedOrgs.length > 0 ? { failedOrgs } : {}),
   });
 }

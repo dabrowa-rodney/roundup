@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   closeInstant,
+  DAY_NAMES,
+  isValidTimeZone,
+  slotInstant,
   isPeriodClosed,
   isPeriodOpen,
   isWeekClosed,
@@ -120,5 +123,34 @@ describe("isPeriodClosed / isPeriodOpen", () => {
     expect(isPeriodOpen("week", "2026-06-29", LONDON, thu)).toBe(
       isWeekOpen("2026-06-29", LONDON, thu),
     );
+  });
+});
+
+describe("isValidTimeZone", () => {
+  it("accepts real IANA zones", () => {
+    expect(isValidTimeZone("Europe/London")).toBe(true);
+    expect(isValidTimeZone("America/New_York")).toBe(true);
+    expect(isValidTimeZone("UTC")).toBe(true);
+  });
+  it("rejects junk instead of letting Intl throw downstream", () => {
+    // An unvalidated value here used to reach Intl.DateTimeFormat inside the
+    // nightly crons, which walk EVERY org in one request — so one tenant's
+    // bad zone broke locking/reminders platform-wide.
+    expect(isValidTimeZone("Not/AZone")).toBe(false);
+    expect(isValidTimeZone("")).toBe(false);
+    expect(isValidTimeZone("   ")).toBe(false);
+    expect(isValidTimeZone("'; DROP TABLE settings; --")).toBe(false);
+  });
+});
+
+describe("DAY_NAMES", () => {
+  it("covers the week and matches the schedule fields' expectations", () => {
+    expect(DAY_NAMES).toHaveLength(7);
+    expect(DAY_NAMES).toContain("Monday");
+    expect(DAY_NAMES).toContain("Sunday");
+    // The scheduler resolves every accepted name to an instant.
+    for (const d of DAY_NAMES) {
+      expect(slotInstant("2026-06-29", d, "09:00", "Europe/London")).toBeInstanceOf(Date);
+    }
   });
 });

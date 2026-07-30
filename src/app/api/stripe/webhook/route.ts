@@ -3,7 +3,7 @@ import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organisations } from "@/db/schema";
-import { tierForLookupKey } from "@/lib/plans";
+import { resolvePlan, tierForLookupKey } from "@/lib/plans";
 import { stripe } from "@/lib/stripe";
 
 // POST /api/stripe/webhook — keeps organisations.plan/planStatus in sync with
@@ -24,6 +24,23 @@ async function orgIdForSubscription(sub: Stripe.Subscription): Promise<number | 
       .limit(1)
   )[0];
   return row?.id ?? null;
+}
+
+/** Does this org currently hold complimentary access (permanent or unexpired)? */
+async function hasLiveComplimentary(orgId: number): Promise<boolean> {
+  const org = (
+    await db
+      .select({
+        plan: organisations.plan,
+        planStatus: organisations.planStatus,
+        trialEndsAt: organisations.trialEndsAt,
+        complimentaryUntil: organisations.complimentaryUntil,
+      })
+      .from(organisations)
+      .where(eq(organisations.id, orgId))
+      .limit(1)
+  )[0];
+  return !!org && resolvePlan(org).isComplimentary;
 }
 
 export async function POST(req: NextRequest) {
@@ -55,6 +72,14 @@ export async function POST(req: NextRequest) {
       const tier = tierForLookupKey(lookupKey);
       if (!tier) break;
 
+      // Never overwrite a LIVE complimentary grant. Subscription events fire on
+      // every renewal/card retry, and blindly writing plan here would silently
+      // destroy the grant while leaving complimentary_until stranded (nothing
+      // reads it once plan != 'complimentary', and the cron's tidy-up requires
+      // that plan). Redeeming is blocked while subscribed, so this is only a
+      // guard against pre-existing/support-created overlaps.
+      if (await hasLiveComplimentary(orgId)) break;
+
       // A dead subscription reverts the org to free (deleted handles the
       // final transition, but 'unpaid'/'incomplete_expired' land here too).
       const dead = ["canceled", "unpaid", "incomplete_expired"].includes(sub.status);
@@ -62,8 +87,8 @@ export async function POST(req: NextRequest) {
         .update(organisations)
         .set(
           dead
-            ? { plan: "free", planStatus: null }
-            : { plan: tier, planStatus: sub.status },
+            ? { plan: "free", planStatus: null, complimentaryUntil: null }
+            : { plan: tier, planStatus: sub.status, complimentaryUntil: null },
         )
         .where(eq(organisations.id, orgId));
       break;
@@ -72,9 +97,12 @@ export async function POST(req: NextRequest) {
       const sub = event.data.object as Stripe.Subscription;
       const orgId = await orgIdForSubscription(sub);
       if (orgId === null) break;
+      if (await hasLiveComplimentary(orgId)) break;
       await db
         .update(organisations)
-        .set({ plan: "free", planStatus: null })
+        // Clearing complimentaryUntil keeps the column from outliving the plan
+        // it belongs to (an expired grant is meaningless once plan is free).
+        .set({ plan: "free", planStatus: null, complimentaryUntil: null })
         .where(eq(organisations.id, orgId));
       break;
     }

@@ -161,6 +161,29 @@ The core of the product: **code owns the facts, AI writes the prose.**
   if the plan includes AI, use the org's decrypted BYO key, else the platform
   `ANTHROPIC_API_KEY`; if the plan has no AI entitlement, no key (deterministic).
 
+### Codes, limits & abuse guards
+- **Discount codes** live in Stripe (promotion codes, minted in the console).
+  **Complimentary codes** are Roundup-internal (`complimentary_codes`): each
+  grants `months` of full free access. Both are redeemed from one box on
+  Settings → Plan & billing (`api/billing/redeem`).
+- `complimentary_redemptions` has `UNIQUE(code_id, org_id)`: that key — not a
+  counter — is what stops an org redeeming a code twice, and it's the audit
+  trail of who granted themselves what. Redemption is also refused while a
+  grant is already live (no stacking) and while a Stripe subscription is
+  active (they'd be charged for something free).
+- **Rate limiting** (`lib/rate-limit.ts`) is DB-backed on purpose: serverless
+  instances share no memory, so an in-process counter is bypassed by landing
+  on a cold instance. Fixed windows, one atomic upsert per check; it **fails
+  open** because it guards already-authorised callers. The lifecycle cron
+  sweeps old windows.
+- **Grandfathering policy (deliberate):** plan limits are enforced when
+  something is **created** — invite, template, sub-team, cadence change.
+  Nothing already built is switched off when a plan lapses; tearing down a
+  customer's live reporting structure mid-week would destroy real work. The
+  trade-off is that a lapsed org can sit above its plan, so the rule is
+  *grandfather it but say so* — `overPlanFeatures()` produces the list and the
+  billing card shows it.
+
 ### Plans & billing — `src/lib/{plans,org-plan,stripe}.ts`, `src/app/api/billing/*`, `src/app/api/stripe/webhook`
 - Tiers: **free** (3 members / 1 template / no AI), **team** (25 / ∞ / AI),
   **business** (∞), **complimentary** (owner-granted, business-equivalent, no
