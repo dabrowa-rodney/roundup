@@ -228,8 +228,19 @@ The core of the product: **code owns the facts, AI writes the prose.**
 
 ### App & console — `src/app/(app)/*`, `src/app/console/*`, `src/components/*`
 - The authenticated shell (`src/app/(app)/layout.tsx`) redirects no-session →
-  `/login`, session-but-no-row → `/onboarding`, then splits by role: **admins**
-  get the full `Sidebar`; **contributors/recipients** get the slim `Topbar`.
+  `/login`, session-but-no-row → `/onboarding`, then splits by authority:
+  **org admins and team leads** get the `Sidebar`; plain
+  **contributors/recipients** get the slim `Topbar`. A lead's sidebar drops the
+  org-wide config areas (Reports, Data sources) and keeps Team + Roundups.
+- Screens follow the same per-team rights as the API (see "Team authority"):
+  `/team` admits admins and leads — admins additionally get the People roster,
+  and the tree renders each team's controls from the server-supplied
+  `canManage`/`canArchive`, with move targets limited to teams the caller also
+  manages. `/roundups` lists only teams the caller manages (that set is also the
+  `?team=` allow-list) and `/roundups/[week]` shows generate/send only when the
+  resolved team is theirs, so a lead who lands on the org-wide Roundup reads it
+  like a recipient. A recipient who also leads a team gets both: the management
+  tables plus their "Sent to you" list.
 - Role home routing: recipients → `/roundups`, everyone else → `/my-reports`
   (mirrored in `src/app/page.tsx` and `src/components/topbar.tsx`).
 - List/read pages are **server components** querying Drizzle directly; mutation
@@ -253,9 +264,10 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `users/invite` | POST | pre-create a member (invite) | admin |
 | `users/[id]` | PATCH/DELETE | edit role/name; remove (guards last admin) | admin |
 | `users/[id]/invite` | POST | resend invite | admin |
+| `users/[id]/teams` | PUT | set a user's team memberships (409 if it would leave a sub-team leaderless) | admin |
 | `teams` | GET/POST | org team tree w/ members (each carries `canManage`); create sub-team (Business) | GET member / POST `canCreateSubTeam` |
 | `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | `canManageTeam`, + `canArchiveTeam` / `canMoveTeam` |
-| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove | `canManageTeam` |
+| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove. 409 on giving up your own lead role, or on stripping a sub-team's last lead | `canManageTeam` |
 | `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
 | `templates/[id]` | PATCH/DELETE | update/restore/move team; soft-delete | admin |
 | `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive | GET member / write admin |

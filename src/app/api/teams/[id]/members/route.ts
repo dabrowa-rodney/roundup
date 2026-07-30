@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { teamMembers, teams, users } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
-import { canManageTeam } from "@/lib/team-authority";
+import { canManageTeam, type TeamAuthority } from "@/lib/team-authority";
 import { getTeamAuthority } from "@/lib/teams";
 
 const NO_AUTHORITY =
@@ -12,19 +12,90 @@ const NO_AUTHORITY =
 async function orgTeam(teamId: number, orgId: number) {
   return (
     await db
-      .select({ id: teams.id })
+      .select({ id: teams.id, parentTeamId: teams.parentTeamId })
       .from(teams)
       .where(and(eq(teams.id, teamId), eq(teams.orgId, orgId)))
       .limit(1)
   )[0];
 }
 
+/** Is `userId` currently a lead of this team? */
+async function isLeadOf(teamId: number, userId: number): Promise<boolean> {
+  return (
+    (
+      await db
+        .select({ userId: teamMembers.userId })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            eq(teamMembers.userId, userId),
+            eq(teamMembers.role, "lead"),
+          ),
+        )
+        .limit(1)
+    ).length > 0
+  );
+}
+
+/** Does the team still have a lead other than `userId`? */
+async function hasAnotherLead(teamId: number, userId: number): Promise<boolean> {
+  return (
+    (
+      await db
+        .select({ userId: teamMembers.userId })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, teamId),
+            eq(teamMembers.role, "lead"),
+            ne(teamMembers.userId, userId),
+          ),
+        )
+        .limit(1)
+    ).length > 0
+  );
+}
+
+/**
+ * Guard the two ways a lead role can be taken away — demotion (POST with
+ * role 'member') and removal (DELETE) — for the cases that would break
+ * something:
+ *
+ *   • A non-admin can't strip their OWN lead role. It's the source of their
+ *     authority over the subtree, so this is the same rule as "a lead can't
+ *     archive their own team": only a parent's lead or an admin can.
+ *   • Nobody can leave a SUB-team with no lead at all. A leaderless sub-team's
+ *     roundup resolves to zero default recipients, so it silently goes nowhere.
+ *     Appoint the replacement first, then remove the outgoing lead. The root
+ *     team is exempt — its audience comes from org roles, not team leads.
+ *
+ * Returns an error message to refuse with, or null to proceed.
+ */
+async function leadRemovalBlock(
+  auth: TeamAuthority,
+  team: { id: number; parentTeamId: number | null },
+  callerId: number,
+  userId: number,
+): Promise<string | null> {
+  if (!(await isLeadOf(team.id, userId))) return null;
+
+  if (!auth.isOrgAdmin && userId === callerId) {
+    return "You can't give up your own lead role for this team — an admin or your parent team's lead has to do it.";
+  }
+  if (team.parentTeamId !== null && !(await hasAnotherLead(team.id, userId))) {
+    return "This is the team's only lead. Appoint another lead first, then remove them — a team with no lead has nobody to send its Roundup to.";
+  }
+  return null;
+}
+
 // POST /api/teams/[id]/members  { userId, role? } — add a member (or change
 // their role). role: 'lead' | 'member'. Needs canManageTeam on this team (D3),
 // so a lead can staff their own subtree. Appointing a co-lead is allowed: it
 // hands out authority over a subtree the caller already manages, so it can't
-// be used to escalate beyond themselves. A person can belong to many teams;
-// this only touches THIS team's row.
+// be used to escalate beyond themselves. Demoting an existing lead goes through
+// leadRemovalBlock. A person can belong to many teams; this only touches THIS
+// team's row.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -39,7 +110,8 @@ export async function POST(
   if (isNaN(teamId)) {
     return NextResponse.json({ error: "Invalid team" }, { status: 400 });
   }
-  if (!(await orgTeam(teamId, me.orgId))) {
+  const team = await orgTeam(teamId, me.orgId);
+  if (!team) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
   const auth = await getTeamAuthority(me.orgId, me.id, me.role);
@@ -65,6 +137,14 @@ export async function POST(
 
   const role = body.role === "lead" ? "lead" : "member";
 
+  // Demoting a lead is a lead removal — same guards as DELETE.
+  if (role !== "lead") {
+    const blocked = await leadRemovalBlock(auth, team, me.id, userId);
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 409 });
+    }
+  }
+
   await db
     .insert(teamMembers)
     .values({ teamId, userId, role })
@@ -77,8 +157,8 @@ export async function POST(
 }
 
 // DELETE /api/teams/[id]/members?userId=N — remove a member from this team.
-// Needs canManageTeam on this team (D3). Their reports and other team
-// memberships are untouched.
+// Needs canManageTeam on this team (D3), and passes leadRemovalBlock if the
+// member is a lead. Their reports and other team memberships are untouched.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -94,12 +174,17 @@ export async function DELETE(
   if (isNaN(teamId) || isNaN(userId)) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
-  if (!(await orgTeam(teamId, me.orgId))) {
+  const team = await orgTeam(teamId, me.orgId);
+  if (!team) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
   const auth = await getTeamAuthority(me.orgId, me.id, me.role);
   if (!canManageTeam(auth, teamId)) {
     return NextResponse.json({ error: NO_AUTHORITY }, { status: 403 });
+  }
+  const blocked = await leadRemovalBlock(auth, team, me.id, userId);
+  if (blocked) {
+    return NextResponse.json({ error: blocked }, { status: 409 });
   }
 
   await db

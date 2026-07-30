@@ -4,7 +4,11 @@ import { db } from "@/db";
 import { teamMembers, teams, users } from "@/db/schema";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
-import { canCreateSubTeam, canManageTeam } from "@/lib/team-authority";
+import {
+  canArchiveTeam,
+  canCreateSubTeam,
+  canManageTeam,
+} from "@/lib/team-authority";
 import {
   ensureRootTeam,
   getTeamAuthority,
@@ -21,8 +25,12 @@ const TEMPLATE_MODES: TemplateMode[] = ["shared", "per_member"];
 
 // GET /api/teams — the caller's org's team tree with members.
 // Any member may read it (it powers grouping everywhere, not just the builder).
-// Each team carries `canManage` so the UI can show controls per team (D3)
-// instead of assuming the caller is an org admin.
+// Each team carries the caller's rights for it so the UI can render controls
+// per team (D3) instead of assuming the caller is an org admin:
+//   canManage  — rename, configure, staff, nest below, drive its Roundup
+//   canArchive — archive/restore, and (same predicate) act as the SOURCE of a
+//                move; a lead's own team is excluded. A move's DESTINATION just
+//                needs canManage, so the picker filters targets on that.
 export async function GET() {
   const me = await getSessionUser();
   if (!me) {
@@ -76,6 +84,7 @@ export async function GET() {
       templateMode: t.templateMode,
       archivedAt: t.archivedAt,
       canManage: canManageTeam(auth, t.id),
+      canArchive: canArchiveTeam(auth, t.id),
       members: (membersByTeam.get(t.id) ?? []).map((m) => ({
         id: m.userId,
         name: m.name,

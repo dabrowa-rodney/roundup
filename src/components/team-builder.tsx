@@ -39,6 +39,12 @@ export interface TeamNode {
   templateMode: TemplateMode;
   archivedAt: string | null;
   members: TeamMemberEntry[];
+  /** Rights the SERVER computed for the current caller (D3) — the client never
+   *  derives these. `canManage`: rename/configure/staff/nest. `canArchive`:
+   *  archive, restore, or be moved (a lead's own team is excluded, so it can't
+   *  relocate or delete its own mandate). */
+  canManage: boolean;
+  canArchive: boolean;
 }
 
 export interface OrgUser {
@@ -487,14 +493,14 @@ function TeamMembersPanel({
   team,
   allTeams,
   orgUsers,
-  isAdmin,
+  canManage,
   indent,
   onMutated,
 }: {
   team: TeamNode;
   allTeams: TeamNode[];
   orgUsers: OrgUser[];
-  isAdmin: boolean;
+  canManage: boolean;
   indent: number;
   onMutated: () => Promise<void>;
 }) {
@@ -563,10 +569,12 @@ function TeamMembersPanel({
   const memberIds = new Set(team.members.map((m) => m.id));
   const addable = orgUsers.filter((u) => !memberIds.has(u.id));
 
-  // Valid new parents: any active team outside this team's own subtree.
+  // Valid new parents: any active team outside this team's own subtree that
+  // the caller also manages — a lead can reorganise inside their subtree but
+  // can't push a team out of it (the API enforces the same rule).
   const excluded = subtreeIds(allTeams, team.id);
   const moveTargets = allTeams.filter(
-    (t) => !excluded.has(t.id) && !t.archivedAt,
+    (t) => !excluded.has(t.id) && !t.archivedAt && t.canManage,
   );
   const isRoot = team.parentTeamId === null;
 
@@ -580,7 +588,7 @@ function TeamMembersPanel({
       {team.members.length === 0 ? (
         <p className="text-[13px] text-muted">
           No one in this team yet
-          {isAdmin ? " — add your first member below." : "."}
+          {canManage ? " — add your first member below." : "."}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
@@ -597,7 +605,7 @@ function TeamMembersPanel({
                   </span>
                 )}
               </div>
-              {isAdmin && (
+              {canManage && (
                 <>
                   <div
                     className="flex gap-0.5 rounded-[9px] bg-line p-[2px]"
@@ -636,7 +644,7 @@ function TeamMembersPanel({
         </div>
       )}
 
-      {isAdmin && (
+      {canManage && (
         <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
           <select
             value={addUserId}
@@ -664,7 +672,10 @@ function TeamMembersPanel({
             + Add member
           </button>
 
-          {!isRoot && !team.archivedAt && (
+          {!isRoot &&
+            !team.archivedAt &&
+            team.canArchive &&
+            moveTargets.length > 0 && (
             <div className="ml-auto flex items-center gap-2 text-[12.5px] text-muted">
               Move to
               <select
@@ -727,7 +738,6 @@ function TeamRow({
   depth,
   allTeams,
   orgUsers,
-  isAdmin,
   expanded,
   onToggle,
   onRename,
@@ -741,7 +751,6 @@ function TeamRow({
   depth: number;
   allTeams: TeamNode[];
   orgUsers: OrgUser[];
-  isAdmin: boolean;
   expanded: boolean;
   onToggle: () => void;
   onRename: () => void;
@@ -815,15 +824,17 @@ function TeamRow({
           </span>
         )}
 
-        {isAdmin && (
+        {team.canManage && (
           <div className="ml-auto flex items-center gap-0.5">
             {archived ? (
-              <button
-                onClick={onRestore}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-ink hover:border-accent"
-              >
-                <ArchiveRestore size={14} /> Restore
-              </button>
+              team.canArchive && (
+                <button
+                  onClick={onRestore}
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-ink hover:border-accent"
+                >
+                  <ArchiveRestore size={14} /> Restore
+                </button>
+              )
             ) : (
               <>
                 <button
@@ -850,7 +861,7 @@ function TeamRow({
                 >
                   <Settings2 size={15} />
                 </button>
-                {!isRoot && (
+                {!isRoot && team.canArchive && (
                   <button
                     onClick={onArchive}
                     aria-label={`Archive ${team.name}`}
@@ -871,7 +882,7 @@ function TeamRow({
           team={team}
           allTeams={allTeams}
           orgUsers={orgUsers}
-          isAdmin={isAdmin && !archived}
+          canManage={team.canManage && !archived}
           indent={indent}
           onMutated={onMutated}
         />
@@ -883,18 +894,15 @@ function TeamRow({
 /* ------------------------------------------------------------------ main */
 
 /**
- * Team structure builder: renders the org's team tree and (for admins) all
- * the editing surface — rename, sub-teams, cadence/roll-up config, member
- * management, moving and archiving. Sits above the member table on the Team
- * page; fetches on mount and refetches after every mutation.
+ * Team structure builder: renders the org's team tree and, per team, whatever
+ * editing surface the caller is entitled to — rename, sub-teams, cadence/roll-up
+ * config, member management, moving and archiving. An org admin gets all of it
+ * everywhere; a team lead gets it for their own subtree; everyone else reads.
+ * The entitlements come from the API per team, never from the client's role.
+ * Sits above the member table on the Team page; fetches on mount and refetches
+ * after every mutation.
  */
-export function TeamBuilder({
-  isAdmin,
-  orgUsers,
-}: {
-  isAdmin: boolean;
-  orgUsers: OrgUser[];
-}) {
+export function TeamBuilder({ orgUsers }: { orgUsers: OrgUser[] }) {
   const [teams, setTeams] = useState<TeamNode[] | null>(null);
   const [error, setError] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -1044,7 +1052,6 @@ export function TeamBuilder({
               depth={depth}
               allTeams={all}
               orgUsers={orgUsers}
-              isAdmin={isAdmin}
               expanded={expandedId === team.id}
               onToggle={() =>
                 setExpandedId((cur) => (cur === team.id ? null : team.id))

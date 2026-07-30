@@ -59,9 +59,13 @@ reasoning recorded so they aren't lost.
   `teams`, `teams/[id]`, `teams/[id]/members`, `roundups/generate`,
   `roundups/send` and `roundups/[id]/recipients`. A lead manages the subtree
   rooted at their team, cannot archive or move that team itself, and cannot
-  reach outside it; `GET /api/teams` returns `canManage` per team so the UI
-  follows. One knock-on: authority is derived from live teams only, so
-  *restoring* an archived team stays admin-only.
+  reach outside it; `GET /api/teams` returns `canManage`/`canArchive` per team so
+  the UI follows. Leads get the sidebar shell, the Team page (tree only — the
+  People roster stays admin), and Roundups scoped to the teams they manage.
+  Two knock-ons: authority is derived from live teams only, so *restoring* an
+  archived team stays admin-only; and a lead can't give up their own lead role,
+  nor can anyone leave a sub-team with no lead at all (409 — appoint the
+  replacement first), which also guards the People roster's team checkboxes.
 
 ## 1. Goal
 

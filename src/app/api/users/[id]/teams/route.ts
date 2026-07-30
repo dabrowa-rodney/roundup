@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { teamMembers, teams, users } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { diffTeamMembership } from "@/lib/teams";
 
 // PUT /api/users/[id]/teams  { teamIds: number[] }
-// Admin-only. Sets which teams a user belongs to in one call — the primary,
-// obvious way to put people on teams (the per-team builder still works too).
-// Reconciles: adds newly-checked teams (as 'member'), removes unchecked ones,
-// and leaves unchanged teams alone so an existing lead role is preserved.
+// Admin-only — it's the People roster's edit dialog, and org membership is
+// admin business (a team lead staffs their subtree through
+// /api/teams/[id]/members instead). Sets which teams a user belongs to in one
+// call. Reconciles: adds newly-checked teams (as 'member'), removes unchecked
+// ones, and leaves unchanged teams alone so an existing lead role is preserved.
+// Refuses to strip the last lead from a sub-team.
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -77,6 +79,52 @@ export async function PUT(
   const current = currentRows.map((r) => r.teamId);
 
   const { add, remove } = diffTeamMembership(current, desired);
+
+  // Un-checking a team the user LEADS must not leave a sub-team leaderless —
+  // its roundup would resolve to zero default recipients and go nowhere. Same
+  // rule the per-team members endpoint enforces; the root team is exempt
+  // because its audience comes from org roles, not team leads.
+  if (remove.length > 0) {
+    const ledAndLeaving = await db
+      .select({ teamId: teams.id, teamName: teams.name })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .where(
+        and(
+          eq(teamMembers.userId, userId),
+          eq(teamMembers.role, "lead"),
+          inArray(teamMembers.teamId, remove),
+          isNotNull(teams.parentTeamId),
+        ),
+      );
+    if (ledAndLeaving.length > 0) {
+      const otherLeads = await db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(
+          and(
+            inArray(
+              teamMembers.teamId,
+              ledAndLeaving.map((t) => t.teamId),
+            ),
+            eq(teamMembers.role, "lead"),
+            ne(teamMembers.userId, userId),
+          ),
+        );
+      const covered = new Set(otherLeads.map((r) => r.teamId));
+      const orphaned = ledAndLeaving.filter((t) => !covered.has(t.teamId));
+      if (orphaned.length > 0) {
+        return NextResponse.json(
+          {
+            error: `They are the only lead of ${orphaned
+              .map((t) => t.teamName)
+              .join(", ")}. Appoint another lead there first — a team with no lead has nobody to send its Roundup to.`,
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
 
   if (add.length > 0) {
     await db

@@ -15,7 +15,8 @@ import {
   periodRange,
   periodStartISO,
 } from "@/lib/dates";
-import { ensureRootTeam } from "@/lib/teams";
+import { canManageTeam } from "@/lib/team-authority";
+import { ensureRootTeam, getTeamAuthority } from "@/lib/teams";
 import type { FullJson, SkimJson } from "@/lib/roundup";
 
 const TEAM_COLS = {
@@ -37,17 +38,21 @@ export default async function RoundupViewerPage({
   const sp = await searchParams;
 
   const me = await getSessionUser();
-  const isAdmin = me?.role === "admin";
-  // Admins manage roundups; recipients may read sent ones. Contributors
-  // have no roundup access.
-  if (!me || (!isAdmin && me.role !== "recipient")) redirect("/my-reports");
+  if (!me) redirect("/my-reports");
 
   const rootTeamId = await ensureRootTeam(me.orgId);
 
-  // Resolve the target team. Admins may address any ACTIVE team in their own
-  // org via ?team=ID; anything else (foreign, archived, garbage) falls back
-  // to the root team. Recipients are always pinned to root — their access is
-  // the root team's SENT roundups only.
+  // Org admins and team leads manage roundups (D3); recipients may read the
+  // sent ones. Everyone else has no roundup access.
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  const managesRoot = canManageTeam(auth, rootTeamId);
+  if (auth.managedTeamIds.size === 0 && !auth.isOrgAdmin && me.role !== "recipient")
+    redirect("/my-reports");
+
+  // Resolve the target team. A manager may address any ACTIVE team in their own
+  // org that they MANAGE via ?team=ID; anything else (foreign, archived,
+  // unmanaged, garbage) falls back to the root team — where a lead who doesn't
+  // manage the root is then treated as a reader, same as a recipient.
   const teamParam = Array.isArray(sp.team) ? sp.team[0] : sp.team;
   const requestedId = Number(teamParam);
   let team:
@@ -60,10 +65,10 @@ export default async function RoundupViewerPage({
       }
     | undefined;
   if (
-    isAdmin &&
     teamParam !== undefined &&
     Number.isInteger(requestedId) &&
-    requestedId !== rootTeamId
+    requestedId !== rootTeamId &&
+    canManageTeam(auth, requestedId)
   ) {
     team = (
       await db
@@ -87,6 +92,9 @@ export default async function RoundupViewerPage({
   const isRoot = team.id === rootTeamId;
   // Only threaded when non-root — the APIs and links default to root.
   const teamIdParam = isRoot ? undefined : team.id;
+  // Management controls follow the RESOLVED team, so a lead viewing the root
+  // (because they named no team, or an id they don't manage) reads only.
+  const canManage = isRoot ? managesRoot : canManageTeam(auth, team.id);
 
   // The team's cadence defines the period; the week param is normalised to
   // the containing period's calendar-aligned start.
@@ -112,15 +120,15 @@ export default async function RoundupViewerPage({
       .limit(1)
   )[0];
 
-  // Recipients only ever see the distributed version — drafts and previews
-  // stay with admins.
-  if (!isAdmin && roundup?.status !== "sent") redirect("/roundups");
+  // Readers only ever see the distributed version — drafts and previews stay
+  // with whoever manages the team.
+  if (!canManage && roundup?.status !== "sent") redirect("/roundups");
 
   // Generation compiles submitted/locked reports (or, for roll-up teams,
   // child roundups) — with none, there is nothing to preview, so the button
   // is withheld (the API refuses too).
   let hasReports = Boolean(roundup);
-  if (!hasReports && isAdmin) {
+  if (!hasReports && canManage) {
     const memberCount =
       (
         await db
@@ -188,7 +196,7 @@ export default async function RoundupViewerPage({
           full={roundup.fullJson as FullJson}
           week={periodStart}
           sent={roundup.status === "sent"}
-          canManage={isAdmin}
+          canManage={canManage}
           roundupId={roundup.id}
           teamId={teamIdParam}
           teamName={team.name}
@@ -197,7 +205,7 @@ export default async function RoundupViewerPage({
       ) : (
         <NotGenerated
           week={periodStart}
-          isAdmin={isAdmin}
+          canManage={canManage}
           hasReports={hasReports}
           teamId={teamIdParam}
           teamName={team.name}
@@ -211,7 +219,7 @@ export default async function RoundupViewerPage({
 
 function NotGenerated({
   week,
-  isAdmin,
+  canManage,
   hasReports,
   teamId,
   teamName,
@@ -219,7 +227,7 @@ function NotGenerated({
   isWeekly,
 }: {
   week: string;
-  isAdmin: boolean;
+  canManage: boolean;
   hasReports: boolean;
   teamId?: number;
   teamName: string;
@@ -249,18 +257,18 @@ function NotGenerated({
           Compile this {periodWord}&apos;s submitted reports into a Roundup
           summary — risks, highlights, key metrics and a per-team rundown.
         </p>
-        {isAdmin && hasReports ? (
+        {canManage && hasReports ? (
           <div className="flex justify-center">
             <GenerateRoundupButton week={week} teamId={teamId} />
           </div>
-        ) : isAdmin ? (
+        ) : canManage ? (
           <p className="text-[13px] font-medium text-muted">
             No reports have been submitted for this {periodWord} yet —
             generating unlocks once the first one is in.
           </p>
         ) : (
           <p className="text-[13px] text-muted">
-            An administrator can generate it once reports are in.
+            This team&apos;s lead can generate it once reports are in.
           </p>
         )}
       </div>

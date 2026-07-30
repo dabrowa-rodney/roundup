@@ -22,7 +22,8 @@ import {
   weekRange,
   type PeriodType,
 } from "@/lib/dates";
-import { ensureRootTeam } from "@/lib/teams";
+import { hasAnyTeamAuthority } from "@/lib/team-authority";
+import { ensureRootTeam, getTeamAuthority } from "@/lib/teams";
 
 const COLS = "min-w-[680px] grid-cols-[1.2fr_1.4fr_1fr_1fr_90px]";
 // Recipients see sent roundups only, without the ops detail.
@@ -64,11 +65,19 @@ type TeamRow = {
   cadence: string;
 };
 
-/** Depth-first flattening of the team tree for the indented selector. */
+/** Depth-first flattening of the team tree for the indented selector. `rows` is
+ *  already filtered to what the caller may see, so any team whose parent isn't
+ *  in the list is treated as a top level — a team lead's own team becomes the
+ *  root of the tree they're shown. */
 function flattenTeams(rows: TeamRow[]): { team: TeamRow; depth: number }[] {
+  const present = new Set(rows.map((r) => r.id));
   const out: { team: TeamRow; depth: number }[] = [];
   const walk = (parentId: number | null, depth: number) => {
-    for (const t of rows.filter((r) => r.parentTeamId === parentId)) {
+    for (const t of rows.filter((r) =>
+      parentId === null
+        ? r.parentTeamId === null || !present.has(r.parentTeamId)
+        : r.parentTeamId === parentId,
+    )) {
       out.push({ team: t, depth });
       walk(t.id, depth + 1);
     }
@@ -77,97 +86,114 @@ function flattenTeams(rows: TeamRow[]): { team: TeamRow; depth: number }[] {
   return out;
 }
 
+/** The org-wide Roundups a recipient has been sent, newest first. Shown alone
+ *  to a plain recipient, and appended below the management tables for someone
+ *  who is both a recipient and a team lead so neither view is lost. */
+function SentToYouList({ sentWeeks }: { sentWeeks: string[] }) {
+  if (sentWeeks.length === 0) {
+    return (
+      <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center">
+        <div className="font-head text-[18px] font-bold">No roundups yet</div>
+        <p className="mx-auto mt-1.5 max-w-[440px] text-[14px] text-muted">
+          Once a weekly Roundup is sent, it will appear here to read any time.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded-card border border-line bg-surface">
+      <div
+        className={`grid ${COLS_READER} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted`}
+      >
+        <span>WEEK</span>
+        <span>RANGE</span>
+        <span />
+      </div>
+      {sentWeeks.map((weekStart) => {
+        const d = parseISODate(weekStart);
+        return (
+          <div
+            key={weekStart}
+            className={`grid ${COLS_READER} items-center gap-3.5 border-t border-line px-[22px] py-[15px]`}
+          >
+            <span className="font-head text-[14.5px] font-bold">
+              {weekNumberLabel(d)}
+            </span>
+            <span className="text-[13.5px] text-muted">{weekRange(d)}</span>
+            <Link
+              href={`/roundups/${weekStart}`}
+              className="text-right text-[13.5px] font-bold text-accent"
+            >
+              Read →
+            </Link>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Week starts of the ROOT team's sent Roundups, newest first. (Sub-team
+ *  roundups are distributed per-roundup, not through this list.) */
+async function sentRootWeeks(rootTeamId: number): Promise<string[]> {
+  const rows = await db
+    .select({ weekStart: roundups.weekStart })
+    .from(roundups)
+    .where(and(eq(roundups.teamId, rootTeamId), eq(roundups.status, "sent")));
+  return rows
+    .map((r) => r.weekStart)
+    .sort()
+    .reverse();
+}
+
 export default async function RoundupsPage({
   searchParams,
 }: {
   searchParams: Promise<{ team?: string | string[] }>;
 }) {
-  // Admins manage roundups; recipients may read sent ones. Contributors
-  // have no roundup access.
+  // Org admins and team leads manage roundups (D3); recipients may read the
+  // sent ones. Everyone else has no roundup access.
   const me = await getSessionUser();
-  if (!me || (me.role !== "admin" && me.role !== "recipient"))
-    redirect("/my-reports");
-  const isAdmin = me.role === "admin";
+  if (!me) redirect("/my-reports");
 
   const rootTeamId = await ensureRootTeam(me.orgId);
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  const canManageSomething = hasAnyTeamAuthority(auth);
+  if (!canManageSomething && me.role !== "recipient") redirect("/my-reports");
 
-  // Recipients: a simple reading list of everything the ROOT team has sent
-  // (sub-team roundups are distributed per-roundup, not via this page).
-  if (!isAdmin) {
-    const sentRoundups = await db
-      .select({ weekStart: roundups.weekStart })
-      .from(roundups)
-      .where(
-        and(eq(roundups.teamId, rootTeamId), eq(roundups.status, "sent")),
-      );
-    const sentWeeks = sentRoundups
-      .map((r) => r.weekStart)
-      .sort()
-      .reverse();
-
+  // A recipient with no team to run just gets the reading list.
+  if (!canManageSomething) {
     return (
       <Screen title="Roundups" subtitle="Weekly summaries sent to you">
-        {sentWeeks.length === 0 ? (
-          <div className="rounded-card border border-dashed border-line bg-surface p-10 text-center">
-            <div className="font-head text-[18px] font-bold">
-              No roundups yet
-            </div>
-            <p className="mx-auto mt-1.5 max-w-[440px] text-[14px] text-muted">
-              Once a weekly Roundup is sent, it will appear here to read any
-              time.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-card border border-line bg-surface">
-            <div
-              className={`grid ${COLS_READER} gap-3.5 border-b border-line px-[22px] py-3.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted`}
-            >
-              <span>WEEK</span>
-              <span>RANGE</span>
-              <span />
-            </div>
-            {sentWeeks.map((weekStart) => {
-              const d = parseISODate(weekStart);
-              return (
-                <div
-                  key={weekStart}
-                  className={`grid ${COLS_READER} items-center gap-3.5 border-t border-line px-[22px] py-[15px]`}
-                >
-                  <span className="font-head text-[14.5px] font-bold">
-                    {weekNumberLabel(d)}
-                  </span>
-                  <span className="text-[13.5px] text-muted">
-                    {weekRange(d)}
-                  </span>
-                  <Link
-                    href={`/roundups/${weekStart}`}
-                    className="text-right text-[13.5px] font-bold text-accent"
-                  >
-                    Read →
-                  </Link>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <SentToYouList sentWeeks={await sentRootWeeks(rootTeamId)} />
       </Screen>
     );
   }
 
-  // ── Admin view: one periods table per team, root by default ──
+  // A recipient who ALSO leads a team gets the management tables below, plus
+  // their reading list appended — unless they manage the root, in which case
+  // the root's own table already covers it.
+  const alsoReads =
+    me.role === "recipient" && !auth.managedTeamIds.has(rootTeamId);
+  const sentWeeks = alsoReads ? await sentRootWeeks(rootTeamId) : [];
 
-  // Active teams — the selector list AND the ?team validation set. A team id
-  // outside the caller's org (or archived, or garbage) falls back to root.
-  const teamRows: TeamRow[] = await db
-    .select({
-      id: teams.id,
-      parentTeamId: teams.parentTeamId,
-      name: teams.name,
-      cadence: teams.cadence,
-    })
-    .from(teams)
-    .where(and(eq(teams.orgId, me.orgId), isNull(teams.archivedAt)))
-    .orderBy(asc(teams.createdAt));
+  // ── Manager view: one periods table per team ──
+
+  // Active teams the caller MANAGES — the selector list AND the ?team
+  // validation set, so an id they don't manage (or a foreign/archived/garbage
+  // one) can't be reached by editing the URL. An admin manages all of them.
+  const teamRows: TeamRow[] = (
+    await db
+      .select({
+        id: teams.id,
+        parentTeamId: teams.parentTeamId,
+        name: teams.name,
+        cadence: teams.cadence,
+      })
+      .from(teams)
+      .where(and(eq(teams.orgId, me.orgId), isNull(teams.archivedAt)))
+      .orderBy(asc(teams.createdAt))
+  ).filter((t) => auth.isOrgAdmin || auth.managedTeamIds.has(t.id));
 
   const sp = await searchParams;
   const teamParam = Array.isArray(sp.team) ? sp.team[0] : sp.team;
@@ -177,6 +203,8 @@ export default async function RoundupsPage({
       ? teamRows.find((t) => t.id === requestedId)
       : undefined) ??
     teamRows.find((t) => t.id === rootTeamId) ??
+    // A lead who doesn't manage the root lands on their own top team instead.
+    teamRows[0] ??
     // ensureRootTeam guarantees a root exists; this is a type-level fallback.
     { id: rootTeamId, parentTeamId: null, name: "All teams", cadence: "weekly" };
 
@@ -441,6 +469,15 @@ export default async function RoundupsPage({
               </Link>
             </div>
           ))}
+        </div>
+      )}
+
+      {alsoReads && (
+        <div className="mt-9">
+          <div className="mb-3.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted">
+            Sent to you
+          </div>
+          <SentToYouList sentWeeks={sentWeeks} />
         </div>
       )}
     </Screen>
