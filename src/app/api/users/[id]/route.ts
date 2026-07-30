@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { users } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { teamMembers, teams, users } from "@/db/schema";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { avatarColor } from "@/lib/avatar";
 import { getSessionUser } from "@/lib/session";
 
@@ -119,6 +119,49 @@ export async function DELETE(
       { error: "There must be at least one administrator." },
       { status: 400 },
     );
+  }
+
+  // Don't strand a team without a lead. team_members cascades on user delete,
+  // so removing a team's ONLY lead silently leaves it leaderless — and a
+  // sub-team roundup's default audience is "this team's leads + the parent's",
+  // which would then resolve to nobody and "send" to an empty list.
+  const ledTeams = await db
+    .select({ teamId: teams.id, teamName: teams.name })
+    .from(teamMembers)
+    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        eq(teamMembers.role, "lead"),
+        eq(teams.orgId, me.orgId),
+        isNull(teams.archivedAt),
+      ),
+    );
+  if (ledTeams.length > 0) {
+    const otherLeads = await db
+      .select({ teamId: teamMembers.teamId })
+      .from(teamMembers)
+      .where(
+        and(
+          inArray(
+            teamMembers.teamId,
+            ledTeams.map((t) => t.teamId),
+          ),
+          eq(teamMembers.role, "lead"),
+          ne(teamMembers.userId, userId),
+        ),
+      );
+    const covered = new Set(otherLeads.map((r) => r.teamId));
+    const ledAlone = ledTeams.filter((t) => !covered.has(t.teamId));
+    if (ledAlone.length > 0) {
+      const names = ledAlone.map((t) => t.teamName).join(", ");
+      return NextResponse.json(
+        {
+          error: `They're the only lead of ${names}. Give ${ledAlone.length === 1 ? "that team" : "those teams"} another lead first, otherwise its roundup would have nobody to go to.`,
+        },
+        { status: 409 },
+      );
+    }
   }
 
   try {

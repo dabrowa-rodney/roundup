@@ -862,7 +862,13 @@ export function ReportsManager() {
                           <div className="min-w-0 flex-1">
                             <div className="font-head text-[15px] font-bold">{r.name}</div>
                             <div className="mt-[3px] text-[12.5px] text-muted">
-                              {r.qCount} question{r.qCount !== 1 ? "s" : ""} · {r.cadence}
+                              {r.qCount} question{r.qCount !== 1 ? "s" : ""} ·{" "}
+                              {/* The TEAM's cadence is what actually governs the
+                                  reporting period — report_templates.cadence is
+                                  legacy and would read "weekly" for a template
+                                  on a monthly team. */}
+                              {teams.find((t) => t.id === r.teamId)?.cadence ??
+                                r.cadence}
                             </div>
                           </div>
                           <div className="flex items-center">
