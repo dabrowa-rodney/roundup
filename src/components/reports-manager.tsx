@@ -229,6 +229,92 @@ function NewTemplateModal({
   );
 }
 
+
+/** Editable report-level Google Sheet, right in the manage panel — the same
+ *  connection the Data sources page manages, so saving here shows up there.
+ *  Render keyed by template id so the draft resets when the selection moves. */
+function DataSourceEditor({
+  templateId,
+  savedUrl,
+  onSaved,
+}: {
+  templateId: number;
+  savedUrl: string | null;
+  onSaved: () => void;
+}) {
+  const [url, setUrl] = useState(savedUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const dirty = url.trim() !== (savedUrl ?? "");
+  const connected = (savedUrl ?? "").trim().length > 0;
+
+  const save = async () => {
+    const trimmed = url.trim();
+    // Same rule the API enforces — caught before the round trip.
+    if (trimmed && !isSheetUrl(trimmed)) {
+      setError(
+        "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank to disconnect.",
+      );
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/templates/${templateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceUrl: trimmed }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Couldn't save the data source.");
+        return;
+      }
+      onSaved();
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="Paste a Google Sheet URL to pull its numbers into the Roundup…"
+          aria-label="Google Sheet URL for this report"
+          className="min-w-[220px] flex-1 rounded-[11px] border border-line bg-bg px-3 py-[10px] font-mono text-[12.5px] text-ink focus:border-accent focus:outline-none"
+        />
+        {dirty ? (
+          <button
+            onClick={save}
+            disabled={saving}
+            className="rounded-full bg-accent px-4 py-2 text-[13px] font-bold text-accent-ink disabled:opacity-40"
+          >
+            {saving ? "Saving…" : connected && !url.trim() ? "Disconnect" : "Save"}
+          </button>
+        ) : connected ? (
+          <span className="whitespace-nowrap rounded-md bg-good-soft px-2.5 py-1 text-[11.5px] font-semibold text-good-ink">
+            Connected
+          </span>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 text-[12.5px] font-medium text-bad">{error}</p>
+      ) : (
+        <p className="mt-1.5 text-[12px] text-muted">
+          Numbers from this sheet are cited in the Roundup. Needs sharing set to
+          &ldquo;Anyone with the link can view&rdquo; — you can preview what it
+          pulls on Data sources.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Add a new question, or — when `question` is set — edit an existing one.
 // Render with a key per question so state re-initialises between opens.
 function QuestionModal({
@@ -1260,19 +1346,12 @@ export function ReportsManager() {
 
             <div className="mt-[18px] border-t border-line pt-4">
               <SectionLabel className="mb-2 tracking-[0.05em]">Data source</SectionLabel>
-              {selectedTemplate.dataSourceUrl ? (
-                <div className="flex items-center gap-2.5 rounded-[11px] border border-line bg-bg px-3 py-[11px]">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--good)" strokeWidth={2} aria-hidden>
-                    <path d="M4 4h16v16H4z" /><path d="M8 8h8M8 12h8M8 16h5" />
-                  </svg>
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{selectedTemplate.dataSourceUrl}</span>
-                  <span className="text-[11px] font-semibold text-good">connected</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2.5 rounded-[11px] border border-dashed border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
-                  No sheet connected — add one on Data sources.
-                </div>
-              )}
+              <DataSourceEditor
+                key={selectedTemplate.id}
+                templateId={selectedTemplate.id}
+                savedUrl={selectedTemplate.dataSourceUrl}
+                onSaved={fetchTemplates}
+              />
             </div>
 
             <div className="mt-[18px] flex flex-wrap items-center gap-3 border-t border-line pt-4">

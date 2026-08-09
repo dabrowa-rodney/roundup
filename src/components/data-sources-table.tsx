@@ -31,6 +31,8 @@ interface Preview {
   loading: boolean;
   ok?: boolean;
   reason?: string;
+  /** A server-provided message (e.g. a rejected save) — wins over reason. */
+  message?: string;
   metrics?: Metric[];
 }
 
@@ -45,11 +47,12 @@ function PreviewLine({ p }: { p?: Preview }) {
   }
   if (!p.ok) {
     const msg =
-      p.reason === "not_shared"
+      p.message ??
+      (p.reason === "not_shared"
         ? "Couldn't read the sheet — set sharing to “Anyone with the link can view”."
         : p.reason === "invalid_url"
           ? "That doesn't look like a Google Sheets link."
-          : "Couldn't reach the sheet. Try again in a moment.";
+          : "Couldn't reach the sheet. Try again in a moment.");
     return (
       <div className="px-[22px] pb-2.5 text-[12.5px] font-medium text-bad">
         ✗ {msg}
@@ -175,6 +178,18 @@ export function DataSourcesTable() {
           prev.map((r, idx) => (idx === i ? { ...r, saved: r.url } : r)),
         );
         runPreview(row.templateId, row.url);
+      } else {
+        // e.g. the API rejecting a non-sheet link — say so instead of a
+        // Save button that silently does nothing.
+        const data = await res.json().catch(() => ({}));
+        setPreviews((p) => ({
+          ...p,
+          [row.templateId]: {
+            loading: false,
+            ok: false,
+            message: data.error || "Couldn't save — try again.",
+          },
+        }));
       }
     } catch {
     } finally {

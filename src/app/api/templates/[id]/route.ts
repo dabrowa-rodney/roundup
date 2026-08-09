@@ -8,6 +8,7 @@ import {
   users,
 } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
+import { normaliseSheetUrl } from "@/lib/sheet-url";
 import { getSessionUser, type SessionUser } from "@/lib/session";
 
 /** The template, only if it belongs to the caller's org. */
@@ -54,7 +55,28 @@ export async function PATCH(
   if (body.name !== undefined) updates.name = body.name.trim();
   if (body.area !== undefined) updates.area = body.area?.trim() || null;
   if (body.cadence !== undefined) updates.cadence = body.cadence;
-  if (body.dataSourceUrl !== undefined) updates.dataSourceUrl = body.dataSourceUrl?.trim() || null;
+  // Same rule as a question's sheet: empty clears it; anything else must be a
+  // real Google Sheets link (host-checked — this string is fetched during
+  // generation and shown in the UI) and is stored normalised.
+  if (body.dataSourceUrl !== undefined) {
+    const raw =
+      typeof body.dataSourceUrl === "string" ? body.dataSourceUrl.trim() : "";
+    if (raw === "") {
+      updates.dataSourceUrl = null;
+    } else {
+      const url = normaliseSheetUrl(raw);
+      if (!url) {
+        return NextResponse.json(
+          {
+            error:
+              "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank.",
+          },
+          { status: 400 },
+        );
+      }
+      updates.dataSourceUrl = url;
+    }
+  }
   // Move the template to another team — must be an integer id owned by the
   // caller's org (never trust a team id from the client without checking).
   if (body.teamId !== undefined) {

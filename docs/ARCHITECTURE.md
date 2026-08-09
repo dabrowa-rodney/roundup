@@ -214,7 +214,8 @@ The core of the product: **code owns the facts, AI writes the prose.**
   `javascript:/spreadsheets/d/x` and `https://evil.test/spreadsheets/d/x`. URLs
   are stored normalised (trimmed, explicit `https`).
 - **Two places can carry a sheet.** A report template has one
-  (`data_source_url`, edited on Data sources), and any individual question can
+  (`data_source_url`, edited on Data sources or straight in the report's manage
+  panel — same PATCH), and any individual question can
   have its own (`questions.config.sheetUrl`, edited on the question — optional,
   so no migration was needed). A question's sheet is shown next to it on the
   report form, so whoever answers can check the numbers, and generate reads
@@ -310,7 +311,7 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | `canManageTeam`, + `canArchiveTeam` / `canMoveTeam` |
 | `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove. 409 on giving up your own lead role, or on stripping a sub-team's last lead | `canManageTeam` |
 | `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
-| `templates/[id]` | PATCH/DELETE | update/restore/move team; soft-delete | admin |
+| `templates/[id]` | PATCH/DELETE | update/restore/move team (validates `dataSourceUrl`); soft-delete | admin |
 | `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive; validates `config.sheetUrl` | GET member / write admin |
 | `instances/[id]` | PATCH | autosave/submit answers | owner only, rejects when locked |
 | `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | `canManageTeam`, maxDuration 60 |
