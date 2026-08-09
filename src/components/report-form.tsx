@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Lock, Upload } from "lucide-react";
+import { ArrowLeft, ExternalLink, Lock, Upload } from "lucide-react";
 import { Segmented } from "./segmented";
 import {
   isSkipped,
   parseConfig,
+  questionSheetUrl,
   RAG_CHOICES,
   SKIPPED_VALUE,
   type QuestionConfig,
@@ -236,6 +237,8 @@ function QuestionField({
   titleSize: string;
 }) {
   const config = parseConfig(question.config);
+  // Re-validated, never taken on trust — this goes straight into an href.
+  const sheetUrl = questionSheetUrl(config);
   const skipped = isSkipped(value);
   // Remember the pre-skip draft so un-skipping restores it. null (not
   // undefined) so the save payload overwrites a previously-saved skip.
@@ -264,6 +267,17 @@ function QuestionField({
             <div className="mt-[3px] text-[13.5px] text-muted">
               {config.helper}
             </div>
+          )}
+          {sheetUrl && (
+            <a
+              href={sheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-[5px] text-[12.5px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
+            >
+              <ExternalLink size={13} strokeWidth={2} />
+              Open the sheet
+            </a>
           )}
         </div>
         {config.skippable && (

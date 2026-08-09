@@ -6,6 +6,7 @@ import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import { ensureRootTeam } from "@/lib/teams";
 import { loadAssignees } from "@/lib/assignees";
+import { parseConfig, questionSheetUrl } from "@/lib/questions";
 
 // GET /api/templates — the caller's org's templates with question counts and
 // their EFFECTIVE assignees (see lib/assignees.ts: explicit rows, or the whole
@@ -45,6 +46,38 @@ export async function GET() {
 
   const countMap = new Map(qCounts.map((q) => [q.templateId, q.count]));
 
+  // Question-level Google Sheets, so the Data sources screen can show every
+  // connected sheet — not just the one attached to the report as a whole.
+  const questionSheetRows = templateIds.length
+    ? await db
+        .select({
+          templateId: questions.templateId,
+          id: questions.id,
+          text: questions.text,
+          config: questions.config,
+        })
+        .from(questions)
+        .where(
+          and(
+            isNull(questions.archivedAt),
+            inArray(questions.templateId, templateIds),
+          ),
+        )
+        .orderBy(asc(questions.order))
+    : [];
+
+  const sheetsByTemplate = new Map<
+    number,
+    { questionId: number; question: string; url: string }[]
+  >();
+  for (const q of questionSheetRows) {
+    const url = questionSheetUrl(parseConfig(q.config));
+    if (!url) continue;
+    const list = sheetsByTemplate.get(q.templateId) || [];
+    list.push({ questionId: q.id, question: q.text, url });
+    sheetsByTemplate.set(q.templateId, list);
+  }
+
   // Who is expected to file each template. On a `shared` team that's every
   // member, not the (unused) assignee rows — so the UI shows what will actually
   // happen. lib/assignees.ts owns the rule.
@@ -72,6 +105,7 @@ export async function GET() {
     ...t,
     qCount: countMap.get(t.id) || 0,
     assignees: assigneeMap.get(t.id) || [],
+    questionSheets: sheetsByTemplate.get(t.id) || [],
   }));
 
   return NextResponse.json({ templates: result });

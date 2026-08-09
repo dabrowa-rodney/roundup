@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { questions, reportTemplates } from "@/db/schema";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { getSessionUser, type SessionUser } from "@/lib/session";
+import { normaliseSheetUrl } from "@/lib/sheet-url";
 
 /** True if the template belongs to the caller's org. */
 async function ownedTemplate(me: SessionUser, templateId: number) {
@@ -45,6 +46,43 @@ export async function GET(
     .orderBy(asc(questions.order));
 
   return NextResponse.json({ questions: qs });
+}
+
+/**
+ * Sanitise the client's question config. `config` is free-form jsonb, so the
+ * one field that must be checked is `sheetUrl` — it is rendered as an href and
+ * fetched server-side during generation, so only a real Google Sheets link may
+ * be stored (that check is also the SSRF guard). An empty string clears it.
+ * Returns the cleaned config, or an error message to refuse with.
+ */
+interface CleanedConfig {
+  config: Record<string, unknown> | null;
+  error: string | null;
+}
+
+function cleanConfig(config: unknown): CleanedConfig {
+  if (config === null || config === undefined) return { config: null, error: null };
+  if (typeof config !== "object" || Array.isArray(config)) {
+    return { config: null, error: "Invalid question settings" };
+  }
+  const out = { ...(config as Record<string, unknown>) };
+  const raw = out.sheetUrl;
+  if (raw === undefined || raw === null || raw === "") {
+    delete out.sheetUrl;
+  } else {
+    // Store the normalised form (trimmed, explicit https) rather than what was
+    // typed, so every later reader gets something safe to put in an href.
+    const url = normaliseSheetUrl(raw);
+    if (!url) {
+      return {
+        config: null,
+        error:
+          "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank.",
+      };
+    }
+    out.sheetUrl = url;
+  }
+  return { config: Object.keys(out).length > 0 ? out : null, error: null };
 }
 
 const VALID_TYPES = [
@@ -101,13 +139,18 @@ export async function POST(
     questionOrder = existing.length > 0 ? existing[existing.length - 1].order + 1 : 0;
   }
 
+  const cleaned = cleanConfig(config);
+  if (cleaned.error) {
+    return NextResponse.json({ error: cleaned.error }, { status: 400 });
+  }
+
   const inserted = await db
     .insert(questions)
     .values({
       templateId,
       text: text.trim(),
       type,
-      config: config || null,
+      config: cleaned.config,
       order: questionOrder,
     })
     .returning();
@@ -171,7 +214,13 @@ export async function PATCH(
       }
       updates.type = body.type;
     }
-    if (body.config !== undefined) updates.config = body.config;
+    if (body.config !== undefined) {
+      const cleaned = cleanConfig(body.config);
+      if (cleaned.error) {
+        return NextResponse.json({ error: cleaned.error }, { status: 400 });
+      }
+      updates.config = cleaned.config;
+    }
     if (body.order !== undefined) updates.order = body.order;
 
     if (Object.keys(updates).length > 0) {

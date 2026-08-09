@@ -4,11 +4,20 @@ import { useState, useEffect, useCallback } from "react";
 
 const COLS = "min-w-[640px] grid-cols-[1.3fr_2.1fr_0.9fr_auto]";
 
+interface QuestionSheet {
+  questionId: number;
+  question: string;
+  url: string;
+}
+
 interface Row {
   templateId: number;
   report: string;
   url: string;
   saved: string;
+  /** Sheets attached to individual questions on this report. Read-only here —
+   *  they're edited on the question itself, in Reports. */
+  questionSheets: QuestionSheet[];
 }
 
 interface Metric {
@@ -118,11 +127,17 @@ export function DataSourcesTable() {
           (t: { archivedAt: string | null }) => !t.archivedAt,
         );
         const mapped: Row[] = active.map(
-          (t: { id: number; name: string; dataSourceUrl: string | null }) => ({
+          (t: {
+            id: number;
+            name: string;
+            dataSourceUrl: string | null;
+            questionSheets?: QuestionSheet[];
+          }) => ({
             templateId: t.id,
             report: t.name,
             url: t.dataSourceUrl || "",
             saved: t.dataSourceUrl || "",
+            questionSheets: t.questionSheets ?? [],
           }),
         );
         setRows(mapped);
@@ -246,6 +261,34 @@ export function DataSourcesTable() {
               </div>
             </div>
             <PreviewLine p={previews[r.templateId]} />
+            {r.questionSheets.length > 0 && (
+              <div className="border-t border-dashed border-line px-[22px] py-2.5">
+                <div className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-muted">
+                  Also pulled in, from individual questions
+                </div>
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {r.questionSheets.map((qs) => (
+                    <li
+                      key={qs.questionId}
+                      className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]"
+                    >
+                      <span className="text-ink">{qs.question}</span>
+                      <a
+                        href={qs.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-accent underline-offset-2 hover:underline"
+                      >
+                        Open sheet ↗
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[12px] text-muted">
+                  Edit these on the question itself, in Reports.
+                </p>
+              </div>
+            )}
           </div>
         );
       })}

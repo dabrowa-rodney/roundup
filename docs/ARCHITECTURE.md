@@ -202,10 +202,25 @@ The core of the product: **code owns the facts, AI writes the prose.**
   narrative fields (headline, exec summary, risk/highlight/change phrasing,
   per-team one-liners). **It never throws** — a missing key, a refusal, a
   timeout, or a parse error all fall back to `compileRoundup` output.
-- **`src/lib/sheets.ts`** ingests a *public* Google Sheet (only
-  `docs.google.com` CSV-export URLs are ever fetched — this is the SSRF guard).
-  Column 0 is the period label; each other column is a metric series. Metrics
-  need ≥2 non-empty rows; chart series need ≥3 numeric points.
+- **`src/lib/sheets.ts`** ingests a *public* Google Sheet. Column 0 is the
+  period label; each other column is a metric series. Metrics need ≥2 non-empty
+  rows; chart series need ≥3 numeric points.
+- **`src/lib/sheet-url.ts`** decides what counts as a sheet link, for both the
+  ingester and the UI (its own module so a client component can validate a URL
+  without pulling the CSV parser into the bundle). It checks **protocol and
+  host**, not just the path shape, which is load-bearing twice: only
+  `docs.google.com` is ever fetched (the SSRF guard), and a question's sheet is
+  rendered to contributors as a link, so a path-only match would have accepted
+  `javascript:/spreadsheets/d/x` and `https://evil.test/spreadsheets/d/x`. URLs
+  are stored normalised (trimmed, explicit `https`).
+- **Two places can carry a sheet.** A report template has one
+  (`data_source_url`, edited on Data sources), and any individual question can
+  have its own (`questions.config.sheetUrl`, edited on the question — optional,
+  so no migration was needed). A question's sheet is shown next to it on the
+  report form, so whoever answers can check the numbers, and generate reads
+  **both** levels for a team, deduplicated by URL so one sheet linked twice
+  can't double-count. Read it via `questionSheetUrl()`, which re-validates on
+  the way out — a stored value is only as trustworthy as whatever wrote it.
 - **Generate → send lifecycle** (`roundups.status`): `pending` → `draft`
   (generate/regenerate) → `sent` (send, one-shot). Both need `canManageTeam` on
   the owning team, so a team lead drives their own subtree's Roundups.
@@ -296,7 +311,7 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove. 409 on giving up your own lead role, or on stripping a sub-team's last lead | `canManageTeam` |
 | `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
 | `templates/[id]` | PATCH/DELETE | update/restore/move team; soft-delete | admin |
-| `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive | GET member / write admin |
+| `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive; validates `config.sheetUrl` | GET member / write admin |
 | `instances/[id]` | PATCH | autosave/submit answers | owner only, rejects when locked |
 | `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | `canManageTeam`, maxDuration 60 |
 | `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | `canManageTeam`, maxDuration 60 |

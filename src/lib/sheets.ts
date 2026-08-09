@@ -8,16 +8,13 @@
 // Sheets API (a later upgrade); this path relies on "anyone with the link can view".
 
 import type { MetricItem, MetricSeries } from "./roundup";
+import { sheetCsvUrl } from "./sheet-url";
 
-/** Build the CSV-export URL for a Google Sheets link, or null if not one. */
-export function sheetCsvUrl(url: string): string | null {
-  const id = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)?.[1];
-  if (!id) return null;
-  const gid = url.match(/[#&?]gid=(\d+)/)?.[1];
-  return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv${
-    gid ? `&gid=${gid}` : ""
-  }`;
-}
+// sheetCsvUrl (and with it the docs.google.com-only guard) lives in
+// lib/sheet-url.ts so the UI can validate a link without pulling this file's
+// CSV parsing and fetching into the client bundle. Re-exported here so the
+// existing import site keeps working.
+export { sheetCsvUrl };
 
 /** Minimal RFC-4180-ish CSV parser (handles quoted fields with commas). */
 export function parseCsv(text: string): string[][] {

@@ -17,7 +17,8 @@ import {
 import { SectionLabel } from "./ui";
 import { ConfirmDialog } from "./confirm-dialog";
 import { initials, avatarColor } from "@/lib/avatar";
-import { parseConfig } from "@/lib/questions";
+import { parseConfig, questionSheetUrl } from "@/lib/questions";
+import { isSheetUrl } from "@/lib/sheet-url";
 
 interface TemplateAssignee {
   id: number;
@@ -250,6 +251,7 @@ function QuestionModal({
   );
   const [unit, setUnit] = useState(initial.unit ?? "");
   const [skippable, setSkippable] = useState(initial.skippable ?? false);
+  const [sheetUrl, setSheetUrl] = useState(initial.sheetUrl ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -263,6 +265,7 @@ function QuestionModal({
     setOptionsText("");
     setUnit("");
     setSkippable(false);
+    setSheetUrl("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -278,11 +281,22 @@ function QuestionModal({
       return;
     }
 
+    // Same rule the API enforces — checked here too so the mistake is caught
+    // before a round trip.
+    const sheet = sheetUrl.trim();
+    if (sheet && !isSheetUrl(sheet)) {
+      setError(
+        "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank.",
+      );
+      return;
+    }
+
     const config: Record<string, unknown> = {};
     if (helper.trim()) config.helper = helper.trim();
     if (isChoice) config.options = options;
     if (isNumber && unit.trim()) config.unit = unit.trim();
     if (skippable) config.skippable = true;
+    if (sheet) config.sheetUrl = sheet;
 
     setLoading(true);
     setError("");
@@ -385,6 +399,23 @@ function QuestionModal({
               className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
               placeholder="A short hint shown under the question"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Google Sheet <span className="font-normal">(optional)</span>
+            </label>
+            <input
+              type="url"
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+            />
+            <p className="mt-1 text-[12.5px] text-muted">
+              Linked next to this question so whoever fills it in can check the
+              numbers, and pulled into the Roundup as context. Needs sharing set
+              to &ldquo;Anyone with the link can view&rdquo;.
+            </p>
           </div>
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
@@ -1185,6 +1216,14 @@ export function ReportsManager() {
                     </button>
                   </span>
                   <span className="flex-1 truncate text-[13.5px]">{q.text}</span>
+                  {questionSheetUrl(parseConfig(q.config)) && (
+                    <span
+                      title="A Google Sheet is linked to this question"
+                      className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted"
+                    >
+                      Sheet
+                    </span>
+                  )}
                   {parseConfig(q.config).skippable && (
                     <span className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted">
                       Skippable

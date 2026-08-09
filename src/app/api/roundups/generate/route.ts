@@ -29,7 +29,7 @@ import {
   type SkimJson,
 } from "@/lib/roundup";
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
-import { isSkipped } from "@/lib/questions";
+import { isSkipped, parseConfig, questionSheetUrl } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
 import { loadAssignees } from "@/lib/assignees";
 import { canManageTeam } from "@/lib/team-authority";
@@ -370,9 +370,12 @@ export async function POST(req: NextRequest) {
     await loadAssignees(expectedTemplates.map((t) => t.id))
   ).length;
 
-  // Pull metrics from this team's active templates' connected Google Sheets.
+  // Pull metrics from every Google Sheet this team's active templates connect:
+  // the report-level data source, plus any sheet attached to an individual
+  // question. Deduplicated, so linking one sheet in several places reads it
+  // once and can't double-count its metrics.
   const srcRows = await db
-    .select({ url: reportTemplates.dataSourceUrl })
+    .select({ id: reportTemplates.id, url: reportTemplates.dataSourceUrl })
     .from(reportTemplates)
     .where(
       and(
@@ -381,12 +384,29 @@ export async function POST(req: NextRequest) {
         isNull(reportTemplates.archivedAt),
       ),
     );
+  const questionSrcRows = srcRows.length
+    ? await db
+        .select({ config: questions.config })
+        .from(questions)
+        .where(
+          and(
+            inArray(
+              questions.templateId,
+              srcRows.map((r) => r.id),
+            ),
+            isNull(questions.archivedAt),
+          ),
+        )
+    : [];
   const sheetUrls = [
-    ...new Set(
-      srcRows
+    ...new Set([
+      ...srcRows
         .map((r) => r.url?.trim())
         .filter((u): u is string => !!u && u.length > 0),
-    ),
+      ...questionSrcRows
+        .map((r) => questionSheetUrl(parseConfig(r.config)))
+        .filter((u): u is string => u !== undefined),
+    ]),
   ];
   const sheetMetrics: MetricItem[] = [];
   const sheetSeries: MetricSeries[] = [];
