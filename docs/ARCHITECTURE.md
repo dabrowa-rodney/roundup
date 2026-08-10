@@ -268,6 +268,19 @@ The core of the product: **code owns the facts, AI writes the prose.**
   idempotently bootstraps products/prices/webhook.
 - Every billing route 503s gracefully when Stripe env is unset.
 
+### Default questions — `default_questions`, `src/app/api/default-questions`
+
+An org can define questions that belong on every report. They are **copied**
+into a template's own `questions` rows at creation (`POST /api/templates`) —
+never referenced — so each report's copy is an ordinary question that can be
+edited or removed per report, and editing/deleting a default never rewrites an
+existing report. Managed from the Reports screen's settings modal
+(admin-only), which drives both this API and a template's questions API with
+the same `QuestionModal` — the two routes deliberately share one
+request/response contract (`cleanQuestionConfig` in `lib/questions.ts` guards
+`config.sheetUrl` in both). Removing a default is a hard delete: the table is
+a source to copy from, not a record.
+
 ### App & console — `src/app/(app)/*`, `src/app/console/*`, `src/components/*`
 - The authenticated shell (`src/app/(app)/layout.tsx`) redirects no-session →
   `/login`, session-but-no-row → `/onboarding`, then splits by authority:
@@ -310,7 +323,8 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `teams` | GET/POST | org team tree w/ members (each carries `canManage`); create sub-team (Business) | GET member / POST `canCreateSubTeam` |
 | `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | `canManageTeam`, + `canArchiveTeam` / `canMoveTeam` |
 | `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove. 409 on giving up your own lead role, or on stripping a sub-team's last lead | `canManageTeam` |
-| `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
+| `templates` | GET/POST | list w/ counts; create (optional org-validated teamId; seeds org default questions as copies) | GET member / POST admin |
+| `default-questions` | GET/POST/PATCH | org-wide default questions (same contract as a template's questions route; PATCH remove is a hard delete) | admin |
 | `templates/[id]` | PATCH/DELETE | update/restore/move team (validates `dataSourceUrl`); soft-delete | admin |
 | `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive; validates `config.sheetUrl` | GET member / write admin |
 | `instances/[id]` | PATCH | autosave/submit answers | owner only, rejects when locked |

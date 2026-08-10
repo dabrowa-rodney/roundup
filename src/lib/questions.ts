@@ -32,6 +32,53 @@ export function questionSheetUrl(config: QuestionConfig): string | undefined {
   return normaliseSheetUrl(config.sheetUrl);
 }
 
+export const VALID_QUESTION_TYPES = [
+  "rag",
+  "long_text",
+  "short_text",
+  "single_choice",
+  "multi_choice",
+  "number",
+  "file_link",
+];
+
+export interface CleanedConfig {
+  config: Record<string, unknown> | null;
+  error: string | null;
+}
+
+/**
+ * Sanitise a client-supplied question config before storing it. `config` is
+ * free-form jsonb, so the one field that must be checked is `sheetUrl` — it is
+ * rendered as an href and fetched server-side during generation, so only a
+ * real Google Sheets link may be stored (that check is also the SSRF guard),
+ * and it is stored normalised. An empty string clears it. Used by both the
+ * per-template questions route and the org default-questions route, so the two
+ * can't drift.
+ */
+export function cleanQuestionConfig(config: unknown): CleanedConfig {
+  if (config === null || config === undefined) return { config: null, error: null };
+  if (typeof config !== "object" || Array.isArray(config)) {
+    return { config: null, error: "Invalid question settings" };
+  }
+  const out = { ...(config as Record<string, unknown>) };
+  const raw = out.sheetUrl;
+  if (raw === undefined || raw === null || raw === "") {
+    delete out.sheetUrl;
+  } else {
+    const url = normaliseSheetUrl(raw);
+    if (!url) {
+      return {
+        config: null,
+        error:
+          "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank.",
+      };
+    }
+    out.sheetUrl = url;
+  }
+  return { config: Object.keys(out).length > 0 ? out : null, error: null };
+}
+
 // Sentinel answer value for a deliberately skipped question. Kept as a
 // distinct shape so it can never collide with a real answer.
 export const SKIPPED_VALUE = { skipped: true } as const;
