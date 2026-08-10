@@ -3,11 +3,20 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { roundupRecipients, roundups, teamMembers, teams, users } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
+import { canManageTeam } from "@/lib/team-authority";
+import { getTeamAuthority } from "@/lib/teams";
 
 // Per-roundup recipient selection (D6). A roundup's audience is whoever is
 // selected on THAT roundup; before anyone is selected, the send flow falls
 // back to tree-derived defaults. Selection locks once the roundup is sent —
 // from then on roundup_recipients is the historical record of who got it.
+//
+// Authority mirrors generate/send (D3): whoever manages the owning team picks
+// its audience. Checked against the roundup's team AFTER org scoping, so a
+// foreign id still 404s rather than revealing itself with a 403.
+
+const NO_AUTHORITY =
+  "You can only change the audience for a Roundup of a team you lead.";
 
 async function loadRoundup(id: number, orgId: number) {
   return (
@@ -70,10 +79,6 @@ export async function GET(
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const { id } = await params;
   const roundupId = parseInt(id, 10);
   if (isNaN(roundupId)) {
@@ -82,6 +87,10 @@ export async function GET(
   const roundup = await loadRoundup(roundupId, me.orgId);
   if (!roundup) {
     return NextResponse.json({ error: "Roundup not found" }, { status: 404 });
+  }
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canManageTeam(auth, roundup.teamId)) {
+    return NextResponse.json({ error: NO_AUTHORITY }, { status: 403 });
   }
 
   const selectedRows = await db
@@ -107,10 +116,6 @@ export async function PUT(
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const { id } = await params;
   const roundupId = parseInt(id, 10);
   if (isNaN(roundupId)) {
@@ -119,6 +124,10 @@ export async function PUT(
   const roundup = await loadRoundup(roundupId, me.orgId);
   if (!roundup) {
     return NextResponse.json({ error: "Roundup not found" }, { status: 404 });
+  }
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canManageTeam(auth, roundup.teamId)) {
+    return NextResponse.json({ error: NO_AUTHORITY }, { status: 403 });
   }
   if (roundup.status === "sent") {
     return NextResponse.json(

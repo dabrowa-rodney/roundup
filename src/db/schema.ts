@@ -143,6 +143,11 @@ export const reportTemplates = pgTable("report_templates", {
     .references(() => teams.id),
   name: text("name").notNull(),
   area: text("area"),
+  // LEGACY — do NOT read this to work out a reporting period. Since teams
+  // landed, the period comes from the owning TEAM's cadence (periodForCadence
+  // in lib/dates.ts); this column is left over from the flat model and can say
+  // "weekly" for a template on a monthly team. Kept only so the drop can ride
+  // along with a future migration.
   cadence: text("cadence").notNull().default("weekly"),
   dataSourceUrl: text("data_source_url"),
   archivedAt: timestamp("archived_at"),

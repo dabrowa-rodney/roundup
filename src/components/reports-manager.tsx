@@ -17,7 +17,8 @@ import {
 import { SectionLabel } from "./ui";
 import { ConfirmDialog } from "./confirm-dialog";
 import { initials, avatarColor } from "@/lib/avatar";
-import { parseConfig } from "@/lib/questions";
+import { parseConfig, questionSheetUrl } from "@/lib/questions";
+import { isSheetUrl } from "@/lib/sheet-url";
 
 interface TemplateAssignee {
   id: number;
@@ -228,6 +229,92 @@ function NewTemplateModal({
   );
 }
 
+
+/** Editable report-level Google Sheet, right in the manage panel — the same
+ *  connection the Data sources page manages, so saving here shows up there.
+ *  Render keyed by template id so the draft resets when the selection moves. */
+function DataSourceEditor({
+  templateId,
+  savedUrl,
+  onSaved,
+}: {
+  templateId: number;
+  savedUrl: string | null;
+  onSaved: () => void;
+}) {
+  const [url, setUrl] = useState(savedUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const dirty = url.trim() !== (savedUrl ?? "");
+  const connected = (savedUrl ?? "").trim().length > 0;
+
+  const save = async () => {
+    const trimmed = url.trim();
+    // Same rule the API enforces — caught before the round trip.
+    if (trimmed && !isSheetUrl(trimmed)) {
+      setError(
+        "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank to disconnect.",
+      );
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/templates/${templateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataSourceUrl: trimmed }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Couldn't save the data source.");
+        return;
+      }
+      onSaved();
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="Paste a Google Sheet URL to pull its numbers into the Roundup…"
+          aria-label="Google Sheet URL for this report"
+          className="min-w-[220px] flex-1 rounded-[11px] border border-line bg-bg px-3 py-[10px] font-mono text-[12.5px] text-ink focus:border-accent focus:outline-none"
+        />
+        {dirty ? (
+          <button
+            onClick={save}
+            disabled={saving}
+            className="rounded-full bg-accent px-4 py-2 text-[13px] font-bold text-accent-ink disabled:opacity-40"
+          >
+            {saving ? "Saving…" : connected && !url.trim() ? "Disconnect" : "Save"}
+          </button>
+        ) : connected ? (
+          <span className="whitespace-nowrap rounded-md bg-good-soft px-2.5 py-1 text-[11.5px] font-semibold text-good-ink">
+            Connected
+          </span>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="mt-1.5 text-[12.5px] font-medium text-bad">{error}</p>
+      ) : (
+        <p className="mt-1.5 text-[12px] text-muted">
+          Numbers from this sheet are cited in the Roundup. Needs sharing set to
+          &ldquo;Anyone with the link can view&rdquo; — you can preview what it
+          pulls on Data sources.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Add a new question, or — when `question` is set — edit an existing one.
 // Render with a key per question so state re-initialises between opens.
 function QuestionModal({
@@ -250,6 +337,7 @@ function QuestionModal({
   );
   const [unit, setUnit] = useState(initial.unit ?? "");
   const [skippable, setSkippable] = useState(initial.skippable ?? false);
+  const [sheetUrl, setSheetUrl] = useState(initial.sheetUrl ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -263,6 +351,7 @@ function QuestionModal({
     setOptionsText("");
     setUnit("");
     setSkippable(false);
+    setSheetUrl("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -278,11 +367,22 @@ function QuestionModal({
       return;
     }
 
+    // Same rule the API enforces — checked here too so the mistake is caught
+    // before a round trip.
+    const sheet = sheetUrl.trim();
+    if (sheet && !isSheetUrl(sheet)) {
+      setError(
+        "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank.",
+      );
+      return;
+    }
+
     const config: Record<string, unknown> = {};
     if (helper.trim()) config.helper = helper.trim();
     if (isChoice) config.options = options;
     if (isNumber && unit.trim()) config.unit = unit.trim();
     if (skippable) config.skippable = true;
+    if (sheet) config.sheetUrl = sheet;
 
     setLoading(true);
     setError("");
@@ -385,6 +485,23 @@ function QuestionModal({
               className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
               placeholder="A short hint shown under the question"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-muted mb-1">
+              Google Sheet <span className="font-normal">(optional)</span>
+            </label>
+            <input
+              type="url"
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+            />
+            <p className="mt-1 text-[12.5px] text-muted">
+              Linked next to this question so whoever fills it in can check the
+              numbers, and pulled into the Roundup as context. Needs sharing set
+              to &ldquo;Anyone with the link can view&rdquo;.
+            </p>
           </div>
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
@@ -575,6 +692,9 @@ export function ReportsManager() {
   const selectedTeam = selectedTemplate
     ? teams.find((t) => t.id === selectedTemplate.teamId)
     : undefined;
+  // A shared team's roster is its assignee list, so assignment isn't editable
+  // per report — see lib/assignees.ts.
+  const sharedTemplateMode = selectedTeam?.templateMode === "shared";
 
   // Active templates grouped by team — root first, then tree order. Archived
   // teams still come back from /api/teams, so their templates group under the
@@ -862,7 +982,13 @@ export function ReportsManager() {
                           <div className="min-w-0 flex-1">
                             <div className="font-head text-[15px] font-bold">{r.name}</div>
                             <div className="mt-[3px] text-[12.5px] text-muted">
-                              {r.qCount} question{r.qCount !== 1 ? "s" : ""} · {r.cadence}
+                              {r.qCount} question{r.qCount !== 1 ? "s" : ""} ·{" "}
+                              {/* The TEAM's cadence is what actually governs the
+                                  reporting period — report_templates.cadence is
+                                  legacy and would read "weekly" for a template
+                                  on a monthly team. */}
+                              {teams.find((t) => t.id === r.teamId)?.cadence ??
+                                r.cadence}
                             </div>
                           </div>
                           <div className="flex items-center">
@@ -1021,6 +1147,10 @@ export function ReportsManager() {
             {moveError && (
               <p className="mb-2.5 text-[12.5px] text-bad">{moveError}</p>
             )}
+            {/* On a team that shares its templates the roster IS the assignee
+                list, so it's shown read-only — editing rows here would look
+                like it did something and wouldn't. Switch the team back to
+                per-member assignment to hand-pick again. */}
             <div className="mb-[18px] flex flex-wrap items-center gap-2">
               <span className="text-[12px] text-muted">Assigned to</span>
               {selectedTemplate.assignees.length > 0 ? (
@@ -1030,22 +1160,28 @@ export function ReportsManager() {
                     className="inline-flex items-center gap-1 rounded-[7px] bg-accent-soft py-0.5 pl-[9px] pr-1.5 text-[12px] font-semibold text-accent"
                   >
                     {a.name || a.email}
-                    <button
-                      onClick={() => toggleAssignee(a.id)}
-                      disabled={savingAssignees}
-                      aria-label={`Unassign ${a.name || a.email}`}
-                      className="rounded-full p-0.5 text-accent/60 hover:bg-accent/10 hover:text-accent disabled:opacity-40"
-                    >
-                      <X size={11} />
-                    </button>
+                    {!sharedTemplateMode && (
+                      <button
+                        onClick={() => toggleAssignee(a.id)}
+                        disabled={savingAssignees}
+                        aria-label={`Unassign ${a.name || a.email}`}
+                        className="rounded-full p-0.5 text-accent/60 hover:bg-accent/10 hover:text-accent disabled:opacity-40"
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
                   </span>
                 ))
               ) : (
-                <span className="text-[12px] italic text-muted">No one assigned</span>
+                <span className="text-[12px] italic text-muted">
+                  {sharedTemplateMode
+                    ? "No one in this team yet"
+                    : "No one assigned"}
+                </span>
               )}
 
               {/* Assign picker */}
-              <div className="relative">
+              <div className={sharedTemplateMode ? "hidden" : "relative"}>
                 <button
                   onClick={() => setShowAssign((v) => !v)}
                   className="rounded-[7px] border border-dashed border-line px-[9px] py-0.5 text-[12px] text-muted hover:border-accent hover:text-accent"
@@ -1107,10 +1243,10 @@ export function ReportsManager() {
                   </>
                 )}
               </div>
-              {selectedTeam?.templateMode === "shared" && (
+              {sharedTemplateMode && (
                 <span className="w-full text-[12px] italic leading-[1.5] text-muted">
-                  This team uses one shared report — every member is included
-                  automatically
+                  This team shares its reports — every member is expected to
+                  file this one, so the list follows the team
                 </span>
               )}
             </div>
@@ -1166,6 +1302,14 @@ export function ReportsManager() {
                     </button>
                   </span>
                   <span className="flex-1 truncate text-[13.5px]">{q.text}</span>
+                  {questionSheetUrl(parseConfig(q.config)) && (
+                    <span
+                      title="A Google Sheet is linked to this question"
+                      className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted"
+                    >
+                      Sheet
+                    </span>
+                  )}
                   {parseConfig(q.config).skippable && (
                     <span className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted">
                       Skippable
@@ -1202,19 +1346,12 @@ export function ReportsManager() {
 
             <div className="mt-[18px] border-t border-line pt-4">
               <SectionLabel className="mb-2 tracking-[0.05em]">Data source</SectionLabel>
-              {selectedTemplate.dataSourceUrl ? (
-                <div className="flex items-center gap-2.5 rounded-[11px] border border-line bg-bg px-3 py-[11px]">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--good)" strokeWidth={2} aria-hidden>
-                    <path d="M4 4h16v16H4z" /><path d="M8 8h8M8 12h8M8 16h5" />
-                  </svg>
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{selectedTemplate.dataSourceUrl}</span>
-                  <span className="text-[11px] font-semibold text-good">connected</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2.5 rounded-[11px] border border-dashed border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
-                  No sheet connected — add one on Data sources.
-                </div>
-              )}
+              <DataSourceEditor
+                key={selectedTemplate.id}
+                templateId={selectedTemplate.id}
+                savedUrl={selectedTemplate.dataSourceUrl}
+                onSaved={fetchTemplates}
+              />
             </div>
 
             <div className="mt-[18px] flex flex-wrap items-center gap-3 border-t border-line pt-4">

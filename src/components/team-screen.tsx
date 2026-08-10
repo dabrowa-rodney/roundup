@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useSession } from "next-auth/react";
 import { Screen } from "@/components/screen";
 import { Avatar, RoleBadge, SectionLabel } from "@/components/ui";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -469,22 +468,20 @@ function EditUserModal({
   );
 }
 
-export function TeamScreen() {
-  const { data: session } = useSession();
+/**
+ * The Team page. Org admins get the whole thing: the team tree plus the People
+ * roster (invite, edit roles, remove). Team leads get the tree only — they
+ * build and staff their own subtree, which is what D3 gives them; the roster's
+ * invite/role/remove actions stay org-admin business. `isAdmin` is decided by
+ * the server component that renders this, never inferred here.
+ */
+export function TeamScreen({ isAdmin }: { isAdmin: boolean }) {
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
   const [stats, setStats] = useState<TeamStats>({ contributors: 0, administrators: 0, recipientsOnly: 0 });
   const [allTeams, setAllTeams] = useState<TeamLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
-
-  // The builder shows editing controls only to org admins. Role isn't in the
-  // session, so find the signed-in member in the fetched list (the API
-  // enforces admin-only writes regardless).
-  const myEmail = session?.user?.email?.toLowerCase();
-  const isAdmin = teamUsers.some(
-    (u) => u.email.toLowerCase() === myEmail && u.role === "admin",
-  );
 
   const fetchTeam = useCallback(async () => {
     try {
@@ -527,34 +524,44 @@ export function TeamScreen() {
     return "Contributor";
   };
 
+  const subtitle = isAdmin ? "People and permissions" : "The teams you lead";
+
   if (loading) {
     return (
-      <Screen title="Team" subtitle="People and permissions">
+      <Screen title="Team" subtitle={subtitle}>
         <div className="text-center py-12 text-muted">Loading team...</div>
       </Screen>
     );
   }
 
   return (
-    <Screen title="Team" subtitle="People and permissions">
-      <InviteModal
-        open={showInvite}
-        allTeams={allTeams}
-        onClose={() => setShowInvite(false)}
-        onInvited={fetchTeam}
-      />
-      {editingUser && (
-        <EditUserModal
-          user={editingUser}
-          allTeams={allTeams}
-          onClose={() => setEditingUser(null)}
-          onUpdated={fetchTeam}
-        />
+    <Screen title="Team" subtitle={subtitle}>
+      {isAdmin && (
+        <>
+          <InviteModal
+            open={showInvite}
+            allTeams={allTeams}
+            onClose={() => setShowInvite(false)}
+            onInvited={fetchTeam}
+          />
+          {editingUser && (
+            <EditUserModal
+              user={editingUser}
+              allTeams={allTeams}
+              onClose={() => setEditingUser(null)}
+              onUpdated={fetchTeam}
+            />
+          )}
+        </>
       )}
 
       {/* Team structure — the org's tree of teams, above the people list. */}
-      <TeamBuilder isAdmin={isAdmin} orgUsers={teamUsers} />
+      <TeamBuilder orgUsers={teamUsers} />
 
+      {/* People roster — org admins only; a lead manages membership through
+          the team tree above. */}
+      {isAdmin && (
+        <>
       <div className="mb-[18px] flex items-center">
         <SectionLabel>People</SectionLabel>
         <div className="flex-1" />
@@ -638,6 +645,8 @@ export function TeamScreen() {
         <StatCard label="Administrators" value={stats.administrators} />
         <StatCard label="Recipients only" value={stats.recipientsOnly} />
       </div>
+        </>
+      )}
     </Screen>
   );
 }

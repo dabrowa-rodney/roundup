@@ -89,7 +89,60 @@ until sub-teams exist). Reports roll UP the tree:
 - Tree safety lives in `src/lib/teams.ts`: `wouldCreateCycle`,
   `MAX_TEAM_DEPTH` (8), subtree walks — the DB does not enforce acyclicity.
 - Nested teams + non-weekly cadences are **Business-tier** (D5), gated at
-  sub-team creation and cadence change.
+  sub-team creation and cadence change. `template_mode` is not plan-gated — a
+  flat Free org can still have everyone file one shared report.
+
+### Who owes a report — `src/lib/assignees.ts`
+
+`teams.template_mode` decides how a team assigns its reports, and **every**
+"who owes one" question funnels through this module so the two modes can't drift
+apart between callers:
+
+- `per_member` (default) — the explicit `report_assignees` rows.
+- `shared` — every member of the template's team. Assignee rows are **ignored**,
+  not merged, so switching a team between modes is reversible: the rows sit
+  untouched while shared and come back on the way out. A shared team is meant to
+  have one template; with several, each member owes each one.
+
+`resolveAssignees()` is the pure rule (tested); `loadAssignees(templateIds)` and
+`loadAssignedTemplateIds(orgId, userId)` wrap it with queries. Callers: the cron
+lifecycle open step, the reminders query, generate's `totalExpected`, the
+Roundups pages' expected counts, `GET /api/templates` (so the UI shows who will
+actually file), and both my-reports surfaces — the list and the form's access
+check, which is what lets a shared team's member open the report at all.
+Templates whose team is archived are excluded everywhere, since an archived team
+stops accepting reports.
+
+On a shared team the Reports screen shows the assignee list read-only: the team
+roster *is* the list, so editing rows there would look like it did something and
+wouldn't.
+
+### Team authority (D3) — `src/lib/team-authority.ts`
+
+Who may do what to a team is a **pure function of the tree**, kept separate
+from the DB so it is exhaustively testable (`team-authority.test.ts`).
+`getTeamAuthority(orgId, userId, orgRole)` in `lib/teams.ts` loads the org's
+live teams plus the caller's `lead` memberships and hands them to
+`teamAuthority()`, which returns `{ isOrgAdmin, leadTeamIds, managedTeamIds }`
+— `managedTeamIds` being the union of the subtrees rooted at the teams the
+caller leads (every team, for an org admin).
+
+- `canManageTeam` — configure a team, staff it, drive its Roundups. True for
+  anything in `managedTeamIds`.
+- `canCreateSubTeam(parentId)` — nest below a team you manage.
+- `canArchiveTeam` — manage, **but never your own lead team**: a lead cannot
+  delete the mandate their authority derives from. Its parent's lead or an
+  admin can.
+- `canMoveTeam(id, newParentId)` — both ends must be managed, and again not
+  your own lead team, so a subtree can never be relocated out of (or into)
+  someone else's reach.
+
+Two rules the routes must preserve: authority is checked **against the
+resolved row, after org scoping**, so a foreign id keeps returning 404 rather
+than confirming itself with a 403; and appointing a co-lead is deliberately
+allowed, because it only shares a subtree the caller already manages. Note
+that `getTeamAuthority` builds the tree from **non-archived** teams, so
+restoring an archived team is effectively admin-only.
 
 ## Subsystems
 
@@ -149,12 +202,29 @@ The core of the product: **code owns the facts, AI writes the prose.**
   narrative fields (headline, exec summary, risk/highlight/change phrasing,
   per-team one-liners). **It never throws** — a missing key, a refusal, a
   timeout, or a parse error all fall back to `compileRoundup` output.
-- **`src/lib/sheets.ts`** ingests a *public* Google Sheet (only
-  `docs.google.com` CSV-export URLs are ever fetched — this is the SSRF guard).
-  Column 0 is the period label; each other column is a metric series. Metrics
-  need ≥2 non-empty rows; chart series need ≥3 numeric points.
+- **`src/lib/sheets.ts`** ingests a *public* Google Sheet. Column 0 is the
+  period label; each other column is a metric series. Metrics need ≥2 non-empty
+  rows; chart series need ≥3 numeric points.
+- **`src/lib/sheet-url.ts`** decides what counts as a sheet link, for both the
+  ingester and the UI (its own module so a client component can validate a URL
+  without pulling the CSV parser into the bundle). It checks **protocol and
+  host**, not just the path shape, which is load-bearing twice: only
+  `docs.google.com` is ever fetched (the SSRF guard), and a question's sheet is
+  rendered to contributors as a link, so a path-only match would have accepted
+  `javascript:/spreadsheets/d/x` and `https://evil.test/spreadsheets/d/x`. URLs
+  are stored normalised (trimmed, explicit `https`).
+- **Two places can carry a sheet.** A report template has one
+  (`data_source_url`, edited on Data sources or straight in the report's manage
+  panel — same PATCH), and any individual question can
+  have its own (`questions.config.sheetUrl`, edited on the question — optional,
+  so no migration was needed). A question's sheet is shown next to it on the
+  report form, so whoever answers can check the numbers, and generate reads
+  **both** levels for a team, deduplicated by URL so one sheet linked twice
+  can't double-count. Read it via `questionSheetUrl()`, which re-validates on
+  the way out — a stored value is only as trustworthy as whatever wrote it.
 - **Generate → send lifecycle** (`roundups.status`): `pending` → `draft`
-  (generate/regenerate, admin-only) → `sent` (send, admin-only, one-shot).
+  (generate/regenerate) → `sent` (send, one-shot). Both need `canManageTeam` on
+  the owning team, so a team lead drives their own subtree's Roundups.
   Generate refuses an empty week (409). Send records recipients, emails
   `recipient`- and `admin`-role users, and marks sent.
 - **AI key selection** happens in the generate route, not in `roundup-ai.ts`:
@@ -200,8 +270,19 @@ The core of the product: **code owns the facts, AI writes the prose.**
 
 ### App & console — `src/app/(app)/*`, `src/app/console/*`, `src/components/*`
 - The authenticated shell (`src/app/(app)/layout.tsx`) redirects no-session →
-  `/login`, session-but-no-row → `/onboarding`, then splits by role: **admins**
-  get the full `Sidebar`; **contributors/recipients** get the slim `Topbar`.
+  `/login`, session-but-no-row → `/onboarding`, then splits by authority:
+  **org admins and team leads** get the `Sidebar`; plain
+  **contributors/recipients** get the slim `Topbar`. A lead's sidebar drops the
+  org-wide config areas (Reports, Data sources) and keeps Team + Roundups.
+- Screens follow the same per-team rights as the API (see "Team authority"):
+  `/team` admits admins and leads — admins additionally get the People roster,
+  and the tree renders each team's controls from the server-supplied
+  `canManage`/`canArchive`, with move targets limited to teams the caller also
+  manages. `/roundups` lists only teams the caller manages (that set is also the
+  `?team=` allow-list) and `/roundups/[week]` shows generate/send only when the
+  resolved team is theirs, so a lead who lands on the org-wide Roundup reads it
+  like a recipient. A recipient who also leads a team gets both: the management
+  tables plus their "Sent to you" list.
 - Role home routing: recipients → `/roundups`, everyone else → `/my-reports`
   (mirrored in `src/app/page.tsx` and `src/components/topbar.tsx`).
 - List/read pages are **server components** querying Drizzle directly; mutation
@@ -225,16 +306,17 @@ The core of the product: **code owns the facts, AI writes the prose.**
 | `users/invite` | POST | pre-create a member (invite) | admin |
 | `users/[id]` | PATCH/DELETE | edit role/name; remove (guards last admin) | admin |
 | `users/[id]/invite` | POST | resend invite | admin |
-| `teams` | GET/POST | org team tree w/ members; create sub-team (Business) | GET member / POST admin |
-| `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | admin |
-| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove | admin |
+| `users/[id]/teams` | PUT | set a user's team memberships (409 if it would leave a sub-team leaderless) | admin |
+| `teams` | GET/POST | org team tree w/ members (each carries `canManage`); create sub-team (Business) | GET member / POST `canCreateSubTeam` |
+| `teams/[id]` | PATCH | rename, re-parent (cycle/depth guards), configure, archive/restore (subtree) | `canManageTeam`, + `canArchiveTeam` / `canMoveTeam` |
+| `teams/[id]/members` | POST/DELETE | add/re-role ('lead'\|'member'); remove. 409 on giving up your own lead role, or on stripping a sub-team's last lead | `canManageTeam` |
 | `templates` | GET/POST | list w/ counts; create (optional org-validated teamId) | GET member / POST admin |
-| `templates/[id]` | PATCH/DELETE | update/restore/move team; soft-delete | admin |
-| `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive | GET member / write admin |
+| `templates/[id]` | PATCH/DELETE | update/restore/move team (validates `dataSourceUrl`); soft-delete | admin |
+| `templates/[id]/questions` | GET/POST/PATCH | list; add; update/archive; validates `config.sheetUrl` | GET member / write admin |
 | `instances/[id]` | PATCH | autosave/submit answers | owner only, rejects when locked |
-| `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | admin, maxDuration 60 |
-| `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | admin, maxDuration 60 |
-| `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | admin |
+| `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | `canManageTeam`, maxDuration 60 |
+| `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | `canManageTeam`, maxDuration 60 |
+| `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | `canManageTeam` on the owning team |
 | `sheets/preview` | GET | preview a sheet's metrics | admin (docs.google.com only) |
 | `billing/checkout` | POST | Stripe Checkout URL | admin (503 if unconfigured) |
 | `billing/portal` | POST | Stripe Customer Portal | admin (needs customer) |
@@ -262,7 +344,11 @@ The core of the product: **code owns the facts, AI writes the prose.**
 5. **This is a modified Next.js.** `params` is a `Promise` (await it); there is
    no `middleware.ts`; read `node_modules/next/dist/docs/` before changing
    routes or pages.
-6. **Untrusted free-text** (contributor answers, sheet cells) is interpolated
+6. **Team authority is derived, never asserted.** Route handlers ask
+   `lib/team-authority.ts` (via `getTeamAuthority`) instead of comparing roles
+   inline, and only after the target row has been org-scoped — see "Team
+   authority (D3)".
+7. **Untrusted free-text** (contributor answers, sheet cells) is interpolated
    into the AI prompt. Injection can at worst distort prose — facts, dots, and
    chart data are code/sheet-sourced and schema-constrained — but treat
    generated prose as attacker-influenceable.

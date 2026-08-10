@@ -4,11 +4,20 @@ import { useState, useEffect, useCallback } from "react";
 
 const COLS = "min-w-[640px] grid-cols-[1.3fr_2.1fr_0.9fr_auto]";
 
+interface QuestionSheet {
+  questionId: number;
+  question: string;
+  url: string;
+}
+
 interface Row {
   templateId: number;
   report: string;
   url: string;
   saved: string;
+  /** Sheets attached to individual questions on this report. Read-only here —
+   *  they're edited on the question itself, in Reports. */
+  questionSheets: QuestionSheet[];
 }
 
 interface Metric {
@@ -22,6 +31,8 @@ interface Preview {
   loading: boolean;
   ok?: boolean;
   reason?: string;
+  /** A server-provided message (e.g. a rejected save) — wins over reason. */
+  message?: string;
   metrics?: Metric[];
 }
 
@@ -36,11 +47,12 @@ function PreviewLine({ p }: { p?: Preview }) {
   }
   if (!p.ok) {
     const msg =
-      p.reason === "not_shared"
+      p.message ??
+      (p.reason === "not_shared"
         ? "Couldn't read the sheet — set sharing to “Anyone with the link can view”."
         : p.reason === "invalid_url"
           ? "That doesn't look like a Google Sheets link."
-          : "Couldn't reach the sheet. Try again in a moment.";
+          : "Couldn't reach the sheet. Try again in a moment.");
     return (
       <div className="px-[22px] pb-2.5 text-[12.5px] font-medium text-bad">
         ✗ {msg}
@@ -118,11 +130,17 @@ export function DataSourcesTable() {
           (t: { archivedAt: string | null }) => !t.archivedAt,
         );
         const mapped: Row[] = active.map(
-          (t: { id: number; name: string; dataSourceUrl: string | null }) => ({
+          (t: {
+            id: number;
+            name: string;
+            dataSourceUrl: string | null;
+            questionSheets?: QuestionSheet[];
+          }) => ({
             templateId: t.id,
             report: t.name,
             url: t.dataSourceUrl || "",
             saved: t.dataSourceUrl || "",
+            questionSheets: t.questionSheets ?? [],
           }),
         );
         setRows(mapped);
@@ -160,6 +178,18 @@ export function DataSourcesTable() {
           prev.map((r, idx) => (idx === i ? { ...r, saved: r.url } : r)),
         );
         runPreview(row.templateId, row.url);
+      } else {
+        // e.g. the API rejecting a non-sheet link — say so instead of a
+        // Save button that silently does nothing.
+        const data = await res.json().catch(() => ({}));
+        setPreviews((p) => ({
+          ...p,
+          [row.templateId]: {
+            loading: false,
+            ok: false,
+            message: data.error || "Couldn't save — try again.",
+          },
+        }));
       }
     } catch {
     } finally {
@@ -246,6 +276,34 @@ export function DataSourcesTable() {
               </div>
             </div>
             <PreviewLine p={previews[r.templateId]} />
+            {r.questionSheets.length > 0 && (
+              <div className="border-t border-dashed border-line px-[22px] py-2.5">
+                <div className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-muted">
+                  Also pulled in, from individual questions
+                </div>
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {r.questionSheets.map((qs) => (
+                    <li
+                      key={qs.questionId}
+                      className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]"
+                    >
+                      <span className="text-ink">{qs.question}</span>
+                      <a
+                        href={qs.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-accent underline-offset-2 hover:underline"
+                      >
+                        Open sheet ↗
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[12px] text-muted">
+                  Edit these on the question itself, in Reports.
+                </p>
+              </div>
+            )}
           </div>
         );
       })}

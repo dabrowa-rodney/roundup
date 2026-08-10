@@ -1,5 +1,7 @@
 // Shared question-type helpers used by the report form and the submitted view.
 
+import { normaliseSheetUrl } from "./sheet-url";
+
 export type QuestionType =
   | "rag"
   | "long_text"
@@ -14,6 +16,20 @@ export interface QuestionConfig {
   options?: string[]; // single_choice / multi_choice
   unit?: string; // number
   skippable?: boolean; // contributor may skip this question
+  /** Optional Google Sheet backing THIS question — shown to whoever answers it,
+   *  and pulled in as Roundup context alongside the report-level sheet. Always
+   *  read it through `questionSheetUrl` rather than directly. */
+  sheetUrl?: string;
+}
+
+/**
+ * The question's Google Sheet, or undefined. Re-validated on the way out as
+ * well as in: this value ends up in an href, and a stored value is only as
+ * trustworthy as whatever wrote it. Anything that isn't a Google Sheets link
+ * (a `javascript:` URL, say) reads as absent.
+ */
+export function questionSheetUrl(config: QuestionConfig): string | undefined {
+  return normaliseSheetUrl(config.sheetUrl);
 }
 
 // Sentinel answer value for a deliberately skipped question. Kept as a

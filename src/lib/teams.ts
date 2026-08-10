@@ -12,6 +12,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { organisations, teamMembers, teams, users } from "@/db/schema";
+import { teamAuthority, type TeamAuthority } from "./team-authority";
 
 /** Hard ceiling on nesting depth (root = depth 1). Deep enough for any real
  *  org chart; shallow enough to keep roll-up generation tractable. */
@@ -170,6 +171,42 @@ export async function ensureRootTeam(orgId: number): Promise<number> {
       .onConflictDoNothing();
   }
   return rootId;
+}
+
+/**
+ * Resolve what the caller may manage: their lead memberships expanded across
+ * the org's active team tree (org admins get everything). This is the single
+ * entry point routes use before acting on a team — see lib/team-authority.ts
+ * for the rules it feeds.
+ */
+export async function getTeamAuthority(
+  orgId: number,
+  userId: number,
+  orgRole: string,
+): Promise<TeamAuthority> {
+  const teamRows = await db
+    .select({ id: teams.id, parentTeamId: teams.parentTeamId })
+    .from(teams)
+    .where(and(eq(teams.orgId, orgId), isNull(teams.archivedAt)));
+
+  const leadRows = await db
+    .select({ teamId: teamMembers.teamId })
+    .from(teamMembers)
+    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+    .where(
+      and(
+        eq(teamMembers.userId, userId),
+        eq(teamMembers.role, "lead"),
+        eq(teams.orgId, orgId),
+        isNull(teams.archivedAt),
+      ),
+    );
+
+  return teamAuthority(
+    teamRows,
+    leadRows.map((r) => r.teamId),
+    orgRole === "admin",
+  );
 }
 
 /** Add a user to their org's root team (idempotent). Global admins join as

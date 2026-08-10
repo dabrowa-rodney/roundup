@@ -30,18 +30,25 @@ reasoning recorded so they aren't lost.
   never wired to materialize assignees, so a shared team would open no instances.
 
 **Deferred (with rationale):**
-- **Full `'shared'` template mode** — implement by treating a shared team's
-  members as its effective assignees in the lifecycle open step, generate's
-  `totalExpected`/instance gather, and the reminders query. Until then it's
-  disabled, and per-member (the default) is the only mode.
+- ~~**Full `'shared'` template mode**~~ — **implemented.** `src/lib/assignees.ts`
+  now owns "who owes a report" for both modes and every caller goes through it:
+  the lifecycle open step, reminders, generate's `totalExpected`, the Roundups
+  expected counts, `GET /api/templates`, and the my-reports list *and* form
+  access check (without that last one a shared team's members couldn't open the
+  report). Assignee rows are ignored rather than merged while shared, so the
+  switch is reversible in both directions. Re-enabled in the API and the
+  Configure modal, with a warning on the change; the Reports screen shows a
+  shared team's assignee list read-only.
 - **`report_instances.teamId` snapshot** — roll-ups attribute member reports by
   the template's *live* team, so a same-cadence template move re-attributes its
   history. Snapshotting the team on each instance at creation would make history
   immutable. (Cross-cadence moves are already blocked.)
-- **User-delete safety** — deleting a user can leave a team with no lead (→ a
-  sub-team send resolves to zero recipients) and cascade-deletes
-  `roundup_recipients` rows on already-*sent* roundups. Block deleting a sole
-  lead, and snapshot recipient identity on sent roundups instead of cascading.
+- **Sent-roundup recipient history** — deleting a user cascade-deletes their
+  `roundup_recipients` rows, including on already-*sent* roundups, so the
+  historical audience quietly shrinks. Snapshot recipient identity (email at
+  send time) instead of cascading. (The other half of this item — a team losing
+  its only lead — is **fixed**: `DELETE /api/users/[id]` now 409s on a sole
+  lead.)
 - **Restore semantics (F6)** — archiving parent A after independently archiving
   child B, then restoring A, resurrects B. Track archive origin to fix.
 - ~~**Downgrade enforcement**~~ — **decided and documented.** Existing
@@ -52,8 +59,18 @@ reasoning recorded so they aren't lost.
   the team's cadence); drop it or assert it mirrors the team.
 - ~~**FK naming divergence**~~ — fixed in `0009`: a fresh `reset.sql` DB and a
   migrated one now produce byte-identical schemas (verified against Postgres 16).
-- **D3 — team leads managing their own subtree**: structure/generation actions
-  remain org-admin-only; the per-team lead role is stored and distributed to.
+- ~~**D3 — team leads managing their own subtree**~~ — **implemented.** The
+  rules live in `src/lib/team-authority.ts` (pure, 16 tests) and are enforced by
+  `teams`, `teams/[id]`, `teams/[id]/members`, `roundups/generate`,
+  `roundups/send` and `roundups/[id]/recipients`. A lead manages the subtree
+  rooted at their team, cannot archive or move that team itself, and cannot
+  reach outside it; `GET /api/teams` returns `canManage`/`canArchive` per team so
+  the UI follows. Leads get the sidebar shell, the Team page (tree only — the
+  People roster stays admin), and Roundups scoped to the teams they manage.
+  Two knock-ons: authority is derived from live teams only, so *restoring* an
+  archived team stays admin-only; and a lead can't give up their own lead role,
+  nor can anyone leave a sub-team with no lead at all (409 — appoint the
+  replacement first), which also guards the People roster's team checkboxes.
 
 ## 1. Goal
 

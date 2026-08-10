@@ -35,17 +35,33 @@ const THIS_WEEK: NavItem[] = [
   },
 ];
 
-const ADMIN: NavItem[] = [
-  { href: "/reports", label: "Reports", icon: FileText, match: ["/reports"] },
-  { href: "/team", label: "Team", icon: Users, match: ["/team"] },
-  {
-    href: "/data-sources",
-    label: "Data sources",
-    icon: Database,
-    match: ["/data-sources"],
-  },
-  { href: "/roundups", label: "Roundups", icon: Table, match: ["/roundups"] },
-];
+// Report templates and sheet connections are org-wide configuration, so they
+// stay admin-only; Team and Roundups are shared with team leads, whose pages
+// scope themselves to the subtree the lead manages (D3).
+const REPORTS: NavItem = {
+  href: "/reports",
+  label: "Reports",
+  icon: FileText,
+  match: ["/reports"],
+};
+const TEAM: NavItem = {
+  href: "/team",
+  label: "Team",
+  icon: Users,
+  match: ["/team"],
+};
+const DATA_SOURCES: NavItem = {
+  href: "/data-sources",
+  label: "Data sources",
+  icon: Database,
+  match: ["/data-sources"],
+};
+const ROUNDUPS: NavItem = {
+  href: "/roundups",
+  label: "Roundups",
+  icon: Table,
+  match: ["/roundups"],
+};
 
 const SETTINGS_ITEM: NavItem = {
   href: "/settings",
@@ -95,17 +111,25 @@ function Brand() {
 }
 
 /** Nav sections + user footer — shared by the desktop aside and the drawer. */
-function SidebarContent() {
+function SidebarContent({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
   const { data: session } = useSession();
 
   const role = (session?.user as { role?: string } | undefined)?.role;
   const name = session?.user?.name ?? "User";
-  const roleLabel = role ? (ROLE_LABEL[role] ?? "Member") : "Member";
-  const isAdmin = role === "admin";
+  // The layout renders this sidebar only for org admins and team leads, so a
+  // non-admin here is a lead — their org role ('contributor', say) would be a
+  // misleading thing to show.
+  const roleLabel = isAdmin
+    ? (ROLE_LABEL.admin ?? "Administrator")
+    : role === "recipient"
+      ? "Team lead · Recipient"
+      : "Team lead";
 
   // Flat list per the dashboard-restyle handoff — no section headers.
-  const items = isAdmin ? [...THIS_WEEK, ...ADMIN, SETTINGS_ITEM] : [...THIS_WEEK, SETTINGS_ITEM];
+  const items = isAdmin
+    ? [...THIS_WEEK, REPORTS, TEAM, DATA_SOURCES, ROUNDUPS, SETTINGS_ITEM]
+    : [...THIS_WEEK, TEAM, ROUNDUPS, SETTINGS_ITEM];
 
   return (
     <>
@@ -136,7 +160,7 @@ function SidebarContent() {
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ isAdmin }: { isAdmin: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -150,7 +174,7 @@ export function Sidebar() {
         <div className="px-2 pb-5 pt-0.5">
           <Brand />
         </div>
-        <SidebarContent />
+        <SidebarContent isAdmin={isAdmin} />
       </aside>
 
       {/* Mobile top bar */}
@@ -184,7 +208,7 @@ export function Sidebar() {
                 <X size={18} />
               </button>
             </div>
-            <SidebarContent />
+            <SidebarContent isAdmin={isAdmin} />
           </div>
         </div>
       )}

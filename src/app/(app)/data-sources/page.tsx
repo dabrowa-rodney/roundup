@@ -13,7 +13,9 @@ export default async function DataSourcesPage() {
       <p className="mb-5 max-w-[560px] text-[14.5px] text-muted">
         Connect a Google Sheet to any report. Its numbers are pulled in as context
         when the weekly Roundup is generated — so the summary can cite real
-        figures, not just what people wrote.
+        figures, not just what people wrote. Individual questions can have their
+        own sheet too; those are set on the question, in Reports, and are listed
+        here alongside the report they belong to.
       </p>
       <DataSourcesTable />
     </Screen>

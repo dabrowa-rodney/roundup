@@ -5,7 +5,13 @@ import { teamMembers, teams, users } from "@/db/schema";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import {
+  canArchiveTeam,
+  canCreateSubTeam,
+  canManageTeam,
+} from "@/lib/team-authority";
+import {
   ensureRootTeam,
+  getTeamAuthority,
   teamDepth,
   MAX_TEAM_DEPTH,
   type RollupMode,
@@ -19,6 +25,12 @@ const TEMPLATE_MODES: TemplateMode[] = ["shared", "per_member"];
 
 // GET /api/teams — the caller's org's team tree with members.
 // Any member may read it (it powers grouping everywhere, not just the builder).
+// Each team carries the caller's rights for it so the UI can render controls
+// per team (D3) instead of assuming the caller is an org admin:
+//   canManage  — rename, configure, staff, nest below, drive its Roundup
+//   canArchive — archive/restore, and (same predicate) act as the SOURCE of a
+//                move; a lead's own team is excluded. A move's DESTINATION just
+//                needs canManage, so the picker filters targets on that.
 export async function GET() {
   const me = await getSessionUser();
   if (!me) {
@@ -26,6 +38,8 @@ export async function GET() {
   }
 
   await ensureRootTeam(me.orgId);
+
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
 
   const teamRows = await db
     .select()
@@ -69,6 +83,8 @@ export async function GET() {
       rollupMode: t.rollupMode,
       templateMode: t.templateMode,
       archivedAt: t.archivedAt,
+      canManage: canManageTeam(auth, t.id),
+      canArchive: canArchiveTeam(auth, t.id),
       members: (membersByTeam.get(t.id) ?? []).map((m) => ({
         id: m.userId,
         name: m.name,
@@ -80,15 +96,13 @@ export async function GET() {
   });
 }
 
-// POST /api/teams — create a sub-team. Admin-only.
+// POST /api/teams — create a sub-team. Org admins anywhere; a team lead may
+// only nest below a team they manage (D3).
 // { name, parentTeamId, cadence?, rollupMode?, templateMode? }
 export async function POST(req: NextRequest) {
   const me = await getSessionUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Plan gate: nested teams are a Business feature (D5).
@@ -129,18 +143,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Parent team not found" }, { status: 404 });
   }
 
+  // Authority is checked only once the parent is known to be in this org, so a
+  // foreign id keeps 404-ing rather than leaking its existence via a 403.
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canCreateSubTeam(auth, parentTeamId)) {
+    return NextResponse.json(
+      {
+        error:
+          "You can only create teams inside a team you lead — ask an admin or that team's lead.",
+      },
+      { status: 403 },
+    );
+  }
+
   const cadence = CADENCES.includes(body.cadence) ? body.cadence : "weekly";
   const rollupMode = ROLLUPS.includes(body.rollupMode)
     ? body.rollupMode
     : "members";
-  // 'shared' template mode isn't implemented yet (it wouldn't materialize any
-  // report instances) — only per-member is offered.
-  if (body.templateMode === "shared") {
-    return NextResponse.json(
-      { error: "Shared templates aren't available yet" },
-      { status: 400 },
-    );
-  }
+  // Both template modes are live — 'shared' means every member of the team is
+  // expected to file each of its templates (lib/assignees.ts).
   const templateMode = TEMPLATE_MODES.includes(body.templateMode)
     ? body.templateMode
     : "per_member";

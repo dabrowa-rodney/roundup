@@ -4,13 +4,13 @@ import { db } from "@/db";
 import {
   answers,
   questions,
-  reportAssignees,
   reportInstances,
   reportTemplates,
   settings,
   teams,
 } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
+import { loadAssignedTemplateIds } from "@/lib/assignees";
 import { Screen } from "@/components/screen";
 import { ReportForm } from "@/components/report-form";
 import {
@@ -57,20 +57,12 @@ export default async function ReportPage({
   )[0];
   if (!template) notFound();
 
-  // Only an assignee (or an admin) may open the report.
-  const assignment = (
-    await db
-      .select({ id: reportAssignees.id })
-      .from(reportAssignees)
-      .where(
-        and(
-          eq(reportAssignees.templateId, templateId),
-          eq(reportAssignees.userId, me.id),
-        ),
-      )
-      .limit(1)
-  )[0];
-  if (!assignment && me.role !== "admin") redirect("/my-reports");
+  // Only someone who owes this report (or an admin) may open it — an explicit
+  // assignee, or any member of a team that shares its templates.
+  const owed = await loadAssignedTemplateIds(me.orgId, me.id);
+  if (!owed.includes(templateId) && me.role !== "admin") {
+    redirect("/my-reports");
+  }
 
   // The reporting period follows the template's TEAM cadence: weekly teams
   // file weekly; monthly/quarterly teams file once per calendar period

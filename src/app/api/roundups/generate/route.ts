@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "@/db";
 import {
   answers,
   emailLog,
   organisations,
   questions,
-  reportAssignees,
   reportInstances,
   reportTemplates,
   roundups,
@@ -30,9 +29,11 @@ import {
   type SkimJson,
 } from "@/lib/roundup";
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
-import { isSkipped } from "@/lib/questions";
+import { isSkipped, parseConfig, questionSheetUrl } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
-import { ensureRootTeam } from "@/lib/teams";
+import { loadAssignees } from "@/lib/assignees";
+import { canManageTeam } from "@/lib/team-authority";
+import { ensureRootTeam, getTeamAuthority } from "@/lib/teams";
 import {
   nextPeriodStartISO,
   periodForCadence,
@@ -58,8 +59,10 @@ function generatedLabel(d: Date): string {
 }
 
 // POST /api/roundups/generate  { week?: "YYYY-MM-DD", teamId?: number }
-// Admin-only. Compiles a team's period into a draft Roundup. Without teamId
-// the org's ROOT team is targeted — identical to the pre-teams behaviour.
+// Needs canManageTeam on the target team (D3). Compiles a team's period into a
+// draft Roundup. Without teamId the org's ROOT team is targeted — identical to
+// the pre-teams behaviour — so a lead who doesn't manage the root must name
+// their own team rather than silently compiling the whole org.
 //
 // Inputs are gathered per the team's rollup_mode (see docs/DESIGN-nested-teams.md):
 //   members  → the team's own members' submitted reports in the period
@@ -70,9 +73,6 @@ export async function POST(req: NextRequest) {
   const me = await getSessionUser();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (me.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await req.json().catch(() => ({}));
@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
     cadence: string;
     rollupMode: string;
   };
+  const defaultedToRoot = body.teamId === undefined;
   if (body.teamId !== undefined) {
     const teamId = Number(body.teamId);
     if (!Number.isInteger(teamId)) {
@@ -131,6 +132,21 @@ export async function POST(req: NextRequest) {
         .limit(1)
     )[0];
     team = row;
+  }
+
+  // Authority is checked against the RESOLVED team, after org scoping — so a
+  // foreign id still 404s. Defaulting to root only works for callers who
+  // actually manage the root team.
+  const auth = await getTeamAuthority(me.orgId, me.id, me.role);
+  if (!canManageTeam(auth, team.id)) {
+    return NextResponse.json(
+      {
+        error: defaultedToRoot
+          ? "You don't manage the organisation-wide Roundup — choose one of your teams and send its teamId."
+          : "You can only generate Roundups for a team you lead.",
+      },
+      { status: 403 },
+    );
   }
 
   // The team's cadence defines the period (calendar-aligned, D4).
@@ -338,28 +354,10 @@ export async function POST(req: NextRequest) {
     answers: answersByInstance.get(i.id) ?? [],
   }));
 
-  // Expected member reports = assignees of THIS team's active templates.
-  const totalExpected =
-    (
-      await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(reportAssignees)
-        .innerJoin(
-          reportTemplates,
-          eq(reportAssignees.templateId, reportTemplates.id),
-        )
-        .where(
-          and(
-            eq(reportTemplates.orgId, me.orgId),
-            eq(reportTemplates.teamId, team.id),
-            isNull(reportTemplates.archivedAt),
-          ),
-        )
-    )[0]?.count ?? 0;
-
-  // Pull metrics from this team's active templates' connected Google Sheets.
-  const srcRows = await db
-    .select({ url: reportTemplates.dataSourceUrl })
+  // Expected member reports = whoever owes one of THIS team's active templates:
+  // assignee rows, or every member if the team shares its templates.
+  const expectedTemplates = await db
+    .select({ id: reportTemplates.id })
     .from(reportTemplates)
     .where(
       and(
@@ -368,12 +366,47 @@ export async function POST(req: NextRequest) {
         isNull(reportTemplates.archivedAt),
       ),
     );
+  const totalExpected = (
+    await loadAssignees(expectedTemplates.map((t) => t.id))
+  ).length;
+
+  // Pull metrics from every Google Sheet this team's active templates connect:
+  // the report-level data source, plus any sheet attached to an individual
+  // question. Deduplicated, so linking one sheet in several places reads it
+  // once and can't double-count its metrics.
+  const srcRows = await db
+    .select({ id: reportTemplates.id, url: reportTemplates.dataSourceUrl })
+    .from(reportTemplates)
+    .where(
+      and(
+        eq(reportTemplates.orgId, me.orgId),
+        eq(reportTemplates.teamId, team.id),
+        isNull(reportTemplates.archivedAt),
+      ),
+    );
+  const questionSrcRows = srcRows.length
+    ? await db
+        .select({ config: questions.config })
+        .from(questions)
+        .where(
+          and(
+            inArray(
+              questions.templateId,
+              srcRows.map((r) => r.id),
+            ),
+            isNull(questions.archivedAt),
+          ),
+        )
+    : [];
   const sheetUrls = [
-    ...new Set(
-      srcRows
+    ...new Set([
+      ...srcRows
         .map((r) => r.url?.trim())
         .filter((u): u is string => !!u && u.length > 0),
-    ),
+      ...questionSrcRows
+        .map((r) => questionSheetUrl(parseConfig(r.config)))
+        .filter((u): u is string => u !== undefined),
+    ]),
   ];
   const sheetMetrics: MetricItem[] = [];
   const sheetSeries: MetricSeries[] = [];
