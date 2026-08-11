@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { reportTemplates, questions, teams, users } from "@/db/schema";
+import { defaultQuestions, reportTemplates, questions, teams, users } from "@/db/schema";
 import { and, eq, isNull, sql, asc, inArray } from "drizzle-orm";
 import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
@@ -180,6 +180,27 @@ export async function POST(req: NextRequest) {
       dataSourceUrl: dataSourceUrl?.trim() || null,
     })
     .returning();
+
+  // Seed the org's default questions. COPIES, not references: from here on
+  // they're ordinary questions rows, so they can be edited or deleted on this
+  // report without touching the defaults — and later changes to the defaults
+  // never rewrite this report.
+  const defaults = await db
+    .select()
+    .from(defaultQuestions)
+    .where(eq(defaultQuestions.orgId, me.orgId))
+    .orderBy(asc(defaultQuestions.order));
+  if (defaults.length > 0) {
+    await db.insert(questions).values(
+      defaults.map((d, i) => ({
+        templateId: inserted[0].id,
+        order: i,
+        text: d.text,
+        type: d.type,
+        config: d.config,
+      })),
+    );
+  }
 
   return NextResponse.json({ template: inserted[0] }, { status: 201 });
 }

@@ -187,6 +187,24 @@ export const questions = pgTable("questions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ── Org-wide default questions ──
+// Copied into every NEW report template at creation (see POST /api/templates),
+// after which the copies are ordinary questions rows — editable and deletable
+// per report, exactly as the feature promises. Changing or deleting a default
+// therefore never rewrites an existing report; it only shapes future ones.
+// Managed from the Reports screen's settings (admin-only).
+export const defaultQuestions = pgTable("default_questions", {
+  id: serial("id").primaryKey(),
+  orgId: integer("org_id")
+    .notNull()
+    .references(() => organisations.id),
+  order: integer("order").notNull().default(0),
+  text: text("text").notNull(),
+  type: text("type").notNull(),
+  config: jsonb("config"), // same shape as questions.config
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ── Report instances (one per template × user × week) ──
 // status: 'not_started' | 'in_progress' | 'submitted' | 'locked'
 export const reportInstances = pgTable(

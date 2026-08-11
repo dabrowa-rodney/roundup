@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Settings2,
   Trash2,
   X,
 } from "lucide-react";
@@ -315,16 +316,241 @@ function DataSourceEditor({
   );
 }
 
+
+/* --------------------------------------------------- report settings modal */
+
+interface DefaultQuestion {
+  id: number;
+  order: number;
+  text: string;
+  type: string;
+  config: unknown;
+}
+
+/**
+ * Report settings — org-wide knobs for the Reports area. Today that's one
+ * section: DEFAULT QUESTIONS, added to every new report automatically (as
+ * copies, so each report can still edit or remove them individually — and
+ * changing the list never rewrites existing reports). Uses the same
+ * QuestionModal as a report's own questions, pointed at /api/default-questions.
+ */
+function ReportSettingsModal({ onClose }: { onClose: () => void }) {
+  const [defaults, setDefaults] = useState<DefaultQuestion[] | null>(null);
+  const [error, setError] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<DefaultQuestion | null>(null);
+  const [removing, setRemoving] = useState<DefaultQuestion | null>(null);
+
+  const fetchDefaults = useCallback(async () => {
+    try {
+      const res = await fetch("/api/default-questions");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Couldn't load the default questions.");
+        return;
+      }
+      setDefaults(data.questions);
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDefaults();
+  }, [fetchDefaults]);
+
+  const patch = async (body: Record<string, unknown>) => {
+    setError("");
+    try {
+      const res = await fetch("/api/default-questions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Couldn't save the change.");
+        return;
+      }
+      await fetchDefaults();
+    } catch {
+      setError("Couldn't reach the server — check your connection.");
+    }
+  };
+
+  const move = (id: number, dir: -1 | 1) => {
+    if (!defaults) return;
+    const from = defaults.findIndex((q) => q.id === id);
+    const to = from + dir;
+    if (from === -1 || to < 0 || to >= defaults.length) return;
+    const next = [...defaults];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setDefaults(next);
+    patch({ reorder: next.map((q) => q.id) });
+  };
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-6 shadow-xl">
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="font-head text-lg font-bold">Report settings</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close report settings"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-accent-soft hover:text-accent"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <p className="text-sm text-muted">
+          Settings that apply across every report.
+        </p>
+
+        <div className="mt-5">
+          <SectionLabel className="tracking-[0.05em]">
+            Default questions
+          </SectionLabel>
+          <p className="mt-1 text-[12.5px] text-muted">
+            Added to every <strong className="text-ink">new</strong> report
+            automatically. Each report gets its own copy, so a question can
+            still be edited or removed report by report — and changes here
+            never alter reports that already exist.
+          </p>
+
+          {error && (
+            <p className="mt-2.5 rounded-lg bg-red-tint px-3 py-2 text-sm text-bad">
+              {error}
+            </p>
+          )}
+
+          <div className="mt-3 flex flex-col gap-2">
+            {defaults === null ? (
+              <div className="rounded-[11px] border border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
+                Loading…
+              </div>
+            ) : defaults.length === 0 ? (
+              <div className="rounded-[11px] border border-dashed border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
+                No default questions yet — new reports start empty.
+              </div>
+            ) : (
+              defaults.map((q) => (
+                <div
+                  key={q.id}
+                  className="flex items-center gap-[11px] rounded-[11px] border border-line bg-bg px-3 py-[11px]"
+                >
+                  <span className="flex flex-shrink-0 flex-col">
+                    <button
+                      onClick={() => move(q.id, -1)}
+                      disabled={defaults[0]?.id === q.id}
+                      aria-label="Move up"
+                      className="flex h-5 w-6 items-center justify-center rounded text-muted hover:bg-accent-soft hover:text-accent disabled:opacity-30"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    <button
+                      onClick={() => move(q.id, 1)}
+                      disabled={defaults[defaults.length - 1]?.id === q.id}
+                      aria-label="Move down"
+                      className="flex h-5 w-6 items-center justify-center rounded text-muted hover:bg-accent-soft hover:text-accent disabled:opacity-30"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13.5px]">
+                    {q.text}
+                  </span>
+                  {questionSheetUrl(parseConfig(q.config)) && (
+                    <span
+                      title="A Google Sheet is linked to this question"
+                      className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted"
+                    >
+                      Sheet
+                    </span>
+                  )}
+                  {parseConfig(q.config).skippable && (
+                    <span className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted">
+                      Skippable
+                    </span>
+                  )}
+                  <span className="whitespace-nowrap rounded-[7px] bg-accent-soft px-[9px] py-[3px] text-[11px] font-semibold text-accent">
+                    {TYPE_LABELS[q.type] || q.type}
+                  </span>
+                  <button
+                    onClick={() => setEditing(q)}
+                    aria-label={`Edit default question: ${q.text}`}
+                    title="Edit question"
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted hover:bg-accent-soft hover:text-accent"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => setRemoving(q)}
+                    aria-label={`Remove default question: ${q.text}`}
+                    title="Remove — future reports won't include it"
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted hover:bg-red-tint hover:text-bad"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))
+            )}
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center justify-center gap-[7px] rounded-[11px] border border-dashed border-line py-[11px] text-[13.5px] font-semibold text-muted hover:border-accent hover:text-accent"
+            >
+              <Plus size={15} /> Add default question
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {(showAdd || editing) && (
+        <QuestionModal
+          key={editing?.id ?? "new-default"}
+          endpoint="/api/default-questions"
+          question={editing}
+          onClose={() => {
+            setShowAdd(false);
+            setEditing(null);
+          }}
+          onSaved={fetchDefaults}
+        />
+      )}
+      <ConfirmDialog
+        open={removing !== null}
+        title="Remove this default question?"
+        body={
+          <>
+            <strong className="text-ink">&ldquo;{removing?.text}&rdquo;</strong>{" "}
+            won&apos;t be added to future reports. Reports that already have it
+            keep their copy — remove it from those individually if needed.
+          </>
+        }
+        confirmLabel="Remove"
+        onConfirm={async () => {
+          if (removing) await patch({ archiveQuestionId: removing.id });
+        }}
+        onClose={() => setRemoving(null)}
+      />
+    </div>
+  );
+}
+
 // Add a new question, or — when `question` is set — edit an existing one.
 // Render with a key per question so state re-initialises between opens.
+// `endpoint` is either a template's questions API or /api/default-questions —
+// both speak the same POST/PATCH contract, so this one modal drives both.
 function QuestionModal({
-  templateId,
+  endpoint,
   question,
   onClose,
   onSaved,
 }: {
-  templateId: number;
-  question: Question | null;
+  endpoint: string;
+  /** Only id/text/type/config are read — a template question or an org
+   *  default question both fit. */
+  question: Pick<Question, "id" | "text" | "type" | "config"> | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -392,7 +618,7 @@ function QuestionModal({
         type,
         config: Object.keys(config).length > 0 ? config : null,
       };
-      const res = await fetch(`/api/templates/${templateId}/questions`, {
+      const res = await fetch(endpoint, {
         method: question ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -612,6 +838,7 @@ export function ReportsManager() {
   const [moveError, setMoveError] = useState("");
   const [showNewTemplate, setShowNewTemplate] = useState(false);
   const [showAddQuestion, setShowAddQuestion] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
   const [showAssign, setShowAssign] = useState(false);
   const [savingAssignees, setSavingAssignees] = useState(false);
@@ -911,10 +1138,13 @@ export function ReportsManager() {
           if (confirmDelete) await deleteTemplate(confirmDelete.id);
         }}
       />
+      {showSettings && (
+        <ReportSettingsModal onClose={() => setShowSettings(false)} />
+      )}
       {selected !== null && (showAddQuestion || editingQuestion) && (
         <QuestionModal
           key={editingQuestion?.id ?? "new"}
-          templateId={selected}
+          endpoint={`/api/templates/${selected}/questions`}
           question={editingQuestion}
           onClose={() => {
             setShowAddQuestion(false);
@@ -946,9 +1176,17 @@ export function ReportsManager() {
       <div className="grid grid-cols-1 items-start gap-[22px] lg:grid-cols-[1.3fr_1fr]">
         {/* Left — template list */}
         <div className="min-w-0">
-          <div className="mb-3.5 flex items-center">
+          <div className="mb-3.5 flex items-center gap-2">
             <SectionLabel className="tracking-[0.05em]">Report templates</SectionLabel>
             <div className="flex-1" />
+            <button
+              onClick={() => setShowSettings(true)}
+              aria-label="Report settings"
+              title="Report settings — default questions"
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-full border border-line bg-surface text-muted hover:border-accent hover:text-accent"
+            >
+              <Settings2 size={15} />
+            </button>
             <button
               onClick={() => setShowNewTemplate(true)}
               className="rounded-full bg-accent px-4 py-[9px] text-[13.5px] font-bold text-accent-ink"

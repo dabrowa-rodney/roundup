@@ -21,6 +21,7 @@ DROP TABLE IF EXISTS "team_members" CASCADE;
 DROP TABLE IF EXISTS "teams" CASCADE;
 DROP TABLE IF EXISTS "report_instances" CASCADE;
 DROP TABLE IF EXISTS "questions" CASCADE;
+DROP TABLE IF EXISTS "default_questions" CASCADE;
 DROP TABLE IF EXISTS "report_assignees" CASCADE;
 DROP TABLE IF EXISTS "report_templates" CASCADE;
 DROP TABLE IF EXISTS "roundup_recipients" CASCADE;
@@ -92,6 +93,16 @@ CREATE TABLE "questions" (
 	"type" text NOT NULL,
 	"config" jsonb,
 	"archived_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+
+CREATE TABLE "default_questions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"org_id" integer NOT NULL,
+	"order" integer DEFAULT 0 NOT NULL,
+	"text" text NOT NULL,
+	"type" text NOT NULL,
+	"config" jsonb,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 
@@ -268,3 +279,4 @@ ALTER TABLE "complimentary_redemptions" ADD CONSTRAINT "complimentary_redemption
 ALTER TABLE "complimentary_redemptions" ADD CONSTRAINT "complimentary_redemptions_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
 ALTER TABLE "complimentary_redemptions" ADD CONSTRAINT "complimentary_redemptions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "roundups" ADD CONSTRAINT "roundups_team_id_teams_id_fk" FOREIGN KEY ("team_id") REFERENCES "public"."teams"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "default_questions" ADD CONSTRAINT "default_questions_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
