@@ -20,6 +20,7 @@ import { ConfirmDialog } from "./confirm-dialog";
 import { initials, avatarColor } from "@/lib/avatar";
 import { parseConfig, questionSheetUrl } from "@/lib/questions";
 import { isSheetUrl } from "@/lib/sheet-url";
+import { apiErrorMessage, safeJson } from "@/lib/api-error";
 
 interface TemplateAssignee {
   id: number;
@@ -342,14 +343,19 @@ function ReportSettingsModal({ onClose }: { onClose: () => void }) {
   const [removing, setRemoving] = useState<DefaultQuestion | null>(null);
 
   const fetchDefaults = useCallback(async () => {
+    setError("");
     try {
       const res = await fetch("/api/default-questions");
-      const data = await res.json().catch(() => ({}));
+      const data = await safeJson(res);
       if (!res.ok) {
-        setError(data.error || "Couldn't load the default questions.");
+        // A non-JSON 500 must read as a server fault (e.g. the 0010 migration
+        // not yet applied), not as a vague client-side failure.
+        setError(
+          apiErrorMessage(res.status, data, "Couldn't load the default questions."),
+        );
         return;
       }
-      setDefaults(data.questions);
+      setDefaults((data as { questions: DefaultQuestion[] }).questions);
     } catch {
       setError("Couldn't reach the server — check your connection.");
     }
@@ -419,16 +425,28 @@ function ReportSettingsModal({ onClose }: { onClose: () => void }) {
           </p>
 
           {error && (
-            <p className="mt-2.5 rounded-lg bg-red-tint px-3 py-2 text-sm text-bad">
-              {error}
-            </p>
+            <div className="mt-2.5 flex items-start justify-between gap-3 rounded-lg bg-red-tint px-3 py-2">
+              <p className="text-sm text-bad">{error}</p>
+              {defaults === null && (
+                <button
+                  onClick={fetchDefaults}
+                  className="whitespace-nowrap text-sm font-semibold text-bad underline-offset-2 hover:underline"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           )}
 
           <div className="mt-3 flex flex-col gap-2">
             {defaults === null ? (
-              <div className="rounded-[11px] border border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
-                Loading…
-              </div>
+              // While the FIRST load is in flight — or has failed (the error
+              // above says so; don't also claim to be loading).
+              !error && (
+                <div className="rounded-[11px] border border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
+                  Loading…
+                </div>
+              )
             ) : defaults.length === 0 ? (
               <div className="rounded-[11px] border border-dashed border-line bg-bg px-3 py-[11px] text-[13px] text-muted">
                 No default questions yet — new reports start empty.
@@ -495,12 +513,14 @@ function ReportSettingsModal({ onClose }: { onClose: () => void }) {
                 </div>
               ))
             )}
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center justify-center gap-[7px] rounded-[11px] border border-dashed border-line py-[11px] text-[13.5px] font-semibold text-muted hover:border-accent hover:text-accent"
-            >
-              <Plus size={15} /> Add default question
-            </button>
+            {defaults !== null && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="flex items-center justify-center gap-[7px] rounded-[11px] border border-dashed border-line py-[11px] text-[13.5px] font-semibold text-muted hover:border-accent hover:text-accent"
+              >
+                <Plus size={15} /> Add default question
+              </button>
+            )}
           </div>
         </div>
       </div>
