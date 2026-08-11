@@ -223,6 +223,93 @@ export function ReportForm({
   );
 }
 
+
+interface QuestionStat {
+  label: string;
+  value: string;
+  delta: string;
+  good: boolean;
+}
+
+/**
+ * The latest numbers from the Google Sheet attached to a question, shown
+ * above the answer box so the contributor can write narrative around them —
+ * the numbers are the prompt, their answer is the commentary. Read-only and
+ * live (not snapshotted): the report stores their words; the Roundup pulls
+ * the sheet's numbers itself at generation time.
+ */
+function QuestionStats({ questionId }: { questionId: number }) {
+  const [state, setState] = useState<
+    | { kind: "loading" }
+    | { kind: "ready"; metrics: QuestionStat[] }
+    | { kind: "unavailable" }
+  >({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/questions/${questionId}/stats`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok && data.ok && Array.isArray(data.metrics) && data.metrics.length > 0) {
+          setState({ kind: "ready", metrics: data.metrics });
+        } else {
+          // No sheet, unreadable sheet, or no metric columns — the sheet link
+          // above the question still works, so stay quiet rather than alarm.
+          setState({ kind: "unavailable" });
+        }
+      } catch {
+        if (!cancelled) setState({ kind: "unavailable" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [questionId]);
+
+  if (state.kind === "loading") {
+    return (
+      <div className="mb-3 rounded-[11px] border border-line bg-bg px-3.5 py-2.5 text-[12.5px] text-muted">
+        Fetching the latest numbers…
+      </div>
+    );
+  }
+  if (state.kind === "unavailable") return null;
+
+  return (
+    <div className="mb-3 rounded-[11px] border border-line bg-bg px-3.5 py-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
+        Latest from the connected sheet
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+        {state.metrics.map((m, i) => (
+          <div key={i} className="min-w-[90px]">
+            <div className="text-[12px] text-muted">{m.label}</div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-head text-[17px] font-bold text-ink">
+                {m.value}
+              </span>
+              {m.delta && (
+                <span
+                  className={`text-[12px] font-semibold ${
+                    m.good ? "text-good" : "text-bad"
+                  }`}
+                >
+                  {m.delta}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 text-[12px] text-muted">
+        Add your take below — what&apos;s behind these numbers?
+      </div>
+    </div>
+  );
+}
+
 function QuestionField({
   index,
   question,
@@ -308,6 +395,7 @@ function QuestionField({
           </button>
         )}
       </div>
+      {sheetUrl && !skipped && <QuestionStats questionId={question.id} />}
       {skipped ? (
         <div className="rounded-[11px] border border-dashed border-line bg-bg px-4 py-3 text-[13px] text-muted">
           Nothing to report this week — it won&apos;t appear in the Roundup.

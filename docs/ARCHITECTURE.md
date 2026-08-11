@@ -213,6 +213,15 @@ The core of the product: **code owns the facts, AI writes the prose.**
   rendered to contributors as a link, so a path-only match would have accepted
   `javascript:/spreadsheets/d/x` and `https://evil.test/spreadsheets/d/x`. URLs
   are stored normalised (trimmed, explicit `https`).
+- **Contributors see their question's numbers.** A question with a sheet shows
+  its latest metrics ABOVE the answer box on the report form
+  (`GET /api/questions/[id]/stats` → `QuestionStats` in `report-form.tsx`), so
+  the answer can be narrative around the numbers. The endpoint resolves the URL
+  from the STORED question config — the caller never supplies one, which is
+  what keeps it from being an open sheet proxy — and access mirrors the form:
+  admins plus whoever owes the template (`loadAssignedTemplateIds`). The
+  display is live, not snapshotted: the report stores the words; generation
+  re-reads the sheet for the numbers.
 - **Two places can carry a sheet.** A report template has one
   (`data_source_url`, edited on Data sources or straight in the report's manage
   panel — same PATCH), and any individual question can
@@ -331,6 +340,7 @@ a source to copy from, not a record.
 | `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | `canManageTeam`, maxDuration 60 |
 | `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | `canManageTeam`, maxDuration 60 |
 | `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | `canManageTeam` on the owning team |
+| `questions/[id]/stats` | GET | metrics from the question's own stored sheet, for whoever owes the report | admin or assignee |
 | `sheets/preview` | GET | preview a sheet's metrics | admin (docs.google.com only) |
 | `billing/checkout` | POST | Stripe Checkout URL | admin (503 if unconfigured) |
 | `billing/portal` | POST | Stripe Customer Portal | admin (needs customer) |
