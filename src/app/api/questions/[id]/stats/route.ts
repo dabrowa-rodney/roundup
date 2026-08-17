@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { questions, reportTemplates, teams } from "@/db/schema";
 import { getSessionUser } from "@/lib/session";
 import { loadAssignedTemplateIds } from "@/lib/assignees";
-import { parseConfig, questionSheetUrl } from "@/lib/questions";
+import { parseConfig, questionSheets } from "@/lib/questions";
 import { fetchSheetPreview } from "@/lib/sheets";
 
 // GET /api/questions/[id]/stats — the metrics from the Google Sheet attached
@@ -64,12 +64,24 @@ export async function GET(
     }
   }
 
-  const url = questionSheetUrl(parseConfig(row.config));
-  if (!url) {
-    // No sheet on this question — nothing to show. Distinct from a broken
+  const sheets = questionSheets(parseConfig(row.config));
+  if (sheets.length === 0) {
+    // No sheets on this question — nothing to show. Distinct from a broken
     // sheet so the client can simply render nothing.
-    return NextResponse.json({ ok: false, reason: "no_sheet", metrics: [] });
+    return NextResponse.json({ ok: false, reason: "no_sheet", sheets: [] });
   }
 
-  return NextResponse.json(await fetchSheetPreview(url));
+  // One result per sheet, in the admin's order, each carrying its title so
+  // the form can label the cards. A sheet that can't be read reports its own
+  // ok:false without sinking the others.
+  const results = await Promise.all(
+    sheets.map(async (sheet) => {
+      const preview = await fetchSheetPreview(sheet.url);
+      return { title: sheet.title ?? null, ...preview };
+    }),
+  );
+  return NextResponse.json({
+    ok: results.some((r) => r.ok),
+    sheets: results,
+  });
 }

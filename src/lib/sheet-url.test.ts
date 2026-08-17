@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isSheetUrl, normaliseSheetUrl, sheetCsvUrl } from "./sheet-url";
-import { questionSheetUrl } from "./questions";
+import { questionSheets } from "./questions";
 
 const REAL =
   "https://docs.google.com/spreadsheets/d/1AbC-dEf_GhI/edit#gid=42";
@@ -83,20 +83,60 @@ describe("normaliseSheetUrl", () => {
   });
 });
 
-describe("questionSheetUrl", () => {
-  it("returns the question's sheet", () => {
-    expect(questionSheetUrl({ sheetUrl: REAL })).toBe(REAL);
+describe("questionSheets", () => {
+  const OTHER = "https://docs.google.com/spreadsheets/d/9ZyX/edit";
+
+  it("returns the sheets list with trimmed titles, in order", () => {
+    expect(
+      questionSheets({
+        sheets: [
+          { title: "  Weekly sales  ", url: REAL },
+          { url: OTHER },
+        ],
+      }),
+    ).toEqual([
+      { title: "Weekly sales", url: REAL },
+      { title: undefined, url: OTHER },
+    ]);
   });
 
-  it("is undefined when there's no sheet", () => {
-    expect(questionSheetUrl({})).toBeUndefined();
-    expect(questionSheetUrl({ helper: "hi" })).toBeUndefined();
+  it("reads the legacy single sheetUrl as a one-item list", () => {
+    expect(questionSheets({ sheetUrl: REAL })).toEqual([{ url: REAL }]);
+  });
+
+  it("prefers the sheets list over the legacy field", () => {
+    expect(
+      questionSheets({ sheets: [{ url: OTHER }], sheetUrl: REAL }),
+    ).toEqual([{ title: undefined, url: OTHER }]);
+  });
+
+  it("is empty when there's no sheet", () => {
+    expect(questionSheets({})).toEqual([]);
+    expect(questionSheets({ helper: "hi" })).toEqual([]);
+    expect(questionSheets({ sheets: [] })).toEqual([]);
   });
 
   // Defence in depth: a stored value is only as trustworthy as whatever wrote
-  // it, so a bad one must read as absent rather than reach an anchor.
-  it("treats a stored non-sheet URL as absent", () => {
-    expect(questionSheetUrl({ sheetUrl: "javascript:alert(1)" })).toBeUndefined();
-    expect(questionSheetUrl({ sheetUrl: "https://evil.test/" })).toBeUndefined();
+  // it, so a bad one must be dropped rather than reach an anchor — without
+  // sinking the valid sheets around it.
+  it("drops stored non-sheet URLs, keeping valid neighbours", () => {
+    expect(
+      questionSheets({
+        sheets: [
+          { title: "bad", url: "javascript:alert(1)" },
+          { title: "good", url: REAL },
+          { url: "https://evil.test/" },
+        ],
+      }),
+    ).toEqual([{ title: "good", url: REAL }]);
+    expect(questionSheets({ sheetUrl: "javascript:alert(1)" })).toEqual([]);
+  });
+
+  it("survives malformed entries", () => {
+    expect(
+      questionSheets({
+        sheets: [null, 42, "x", { title: "no url" }, { url: REAL }],
+      } as never),
+    ).toEqual([{ title: undefined, url: REAL }]);
   });
 });

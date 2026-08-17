@@ -18,7 +18,7 @@ import {
 import { SectionLabel } from "./ui";
 import { ConfirmDialog } from "./confirm-dialog";
 import { initials, avatarColor } from "@/lib/avatar";
-import { parseConfig, questionSheetUrl } from "@/lib/questions";
+import { parseConfig, questionSheets } from "@/lib/questions";
 import { isSheetUrl } from "@/lib/sheet-url";
 import { apiErrorMessage, safeJson } from "@/lib/api-error";
 
@@ -478,12 +478,14 @@ function ReportSettingsModal({ onClose }: { onClose: () => void }) {
                   <span className="min-w-0 flex-1 truncate text-[13.5px]">
                     {q.text}
                   </span>
-                  {questionSheetUrl(parseConfig(q.config)) && (
+                  {questionSheets(parseConfig(q.config)).length > 0 && (
                     <span
-                      title="A Google Sheet is linked to this question"
+                      title="Google Sheets linked to this question"
                       className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted"
                     >
-                      Sheet
+                      {questionSheets(parseConfig(q.config)).length === 1
+                        ? "Sheet"
+                        : `${questionSheets(parseConfig(q.config)).length} sheets`}
                     </span>
                   )}
                   {parseConfig(q.config).skippable && (
@@ -583,7 +585,15 @@ function QuestionModal({
   );
   const [unit, setUnit] = useState(initial.unit ?? "");
   const [skippable, setSkippable] = useState(initial.skippable ?? false);
-  const [sheetUrl, setSheetUrl] = useState(initial.sheetUrl ?? "");
+  const [sheetRows, setSheetRows] = useState<{ title: string; url: string }[]>(
+    () => {
+      const existing = questionSheets(initial).map((sh) => ({
+        title: sh.title ?? "",
+        url: sh.url,
+      }));
+      return existing.length > 0 ? existing : [{ title: "", url: "" }];
+    },
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -597,7 +607,7 @@ function QuestionModal({
     setOptionsText("");
     setUnit("");
     setSkippable(false);
-    setSheetUrl("");
+    setSheetRows([{ title: "", url: "" }]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -614,11 +624,15 @@ function QuestionModal({
     }
 
     // Same rule the API enforces — checked here too so the mistake is caught
-    // before a round trip.
-    const sheet = sheetUrl.trim();
-    if (sheet && !isSheetUrl(sheet)) {
+    // before a round trip. Rows with no URL are simply dropped (a title alone
+    // isn't a sheet).
+    const sheets = sheetRows
+      .map((row) => ({ title: row.title.trim(), url: row.url.trim() }))
+      .filter((row) => row.url !== "");
+    const badSheet = sheets.find((row) => !isSheetUrl(row.url));
+    if (badSheet) {
       setError(
-        "That doesn't look like a Google Sheets link — paste the sheet's URL, or leave it blank.",
+        `"${badSheet.url.slice(0, 60)}" doesn't look like a Google Sheets link — paste the sheet's URL, or remove that row.`,
       );
       return;
     }
@@ -628,7 +642,13 @@ function QuestionModal({
     if (isChoice) config.options = options;
     if (isNumber && unit.trim()) config.unit = unit.trim();
     if (skippable) config.skippable = true;
-    if (sheet) config.sheetUrl = sheet;
+    // Always written as the `sheets` list; the legacy single sheetUrl field is
+    // never re-saved, so editing an old question migrates it forward.
+    if (sheets.length > 0) {
+      config.sheets = sheets.map((row) =>
+        row.title ? { title: row.title, url: row.url } : { url: row.url },
+      );
+    }
 
     setLoading(true);
     setError("");
@@ -734,19 +754,77 @@ function QuestionModal({
           </div>
           <div>
             <label className="block text-sm font-medium text-muted mb-1">
-              Google Sheet <span className="font-normal">(optional)</span>
+              Google Sheets <span className="font-normal">(optional)</span>
             </label>
-            <input
-              type="url"
-              value={sheetUrl}
-              onChange={(e) => setSheetUrl(e.target.value)}
-              className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm focus:border-accent focus:outline-none"
-              placeholder="https://docs.google.com/spreadsheets/d/..."
-            />
+            <div className="flex flex-col gap-2">
+              {sheetRows.map((row, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-1.5 rounded-lg border border-line bg-canvas p-2"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={row.title}
+                      onChange={(e) =>
+                        setSheetRows((rows) =>
+                          rows.map((r, idx) =>
+                            idx === i ? { ...r, title: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      maxLength={60}
+                      aria-label={`Title for sheet ${i + 1}`}
+                      className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                      placeholder="Title — e.g. Weekly sales"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSheetRows((rows) =>
+                          rows.length === 1
+                            ? [{ title: "", url: "" }]
+                            : rows.filter((_, idx) => idx !== i),
+                        )
+                      }
+                      aria-label={`Remove sheet ${i + 1}`}
+                      title="Remove this sheet"
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-muted hover:bg-red-tint hover:text-bad"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <input
+                    type="url"
+                    value={row.url}
+                    onChange={(e) =>
+                      setSheetRows((rows) =>
+                        rows.map((r, idx) =>
+                          idx === i ? { ...r, url: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    aria-label={`URL for sheet ${i + 1}`}
+                    className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12.5px] focus:border-accent focus:outline-none"
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() =>
+                  setSheetRows((rows) => [...rows, { title: "", url: "" }])
+                }
+                className="flex items-center justify-center gap-[7px] rounded-lg border border-dashed border-line py-2 text-[13px] font-semibold text-muted hover:border-accent hover:text-accent"
+              >
+                <Plus size={14} /> Add another sheet
+              </button>
+            </div>
             <p className="mt-1 text-[12.5px] text-muted">
-              Linked next to this question so whoever fills it in can check the
-              numbers, and pulled into the Roundup as context. Needs sharing set
-              to &ldquo;Anyone with the link can view&rdquo;.
+              Each sheet is linked next to this question (with its title) so
+              whoever fills it in can check the numbers, and pulled into the
+              Roundup as context. Sharing must be set to &ldquo;Anyone with the
+              link can view&rdquo;.
             </p>
           </div>
           <label className="flex cursor-pointer items-start gap-2.5">
@@ -1560,12 +1638,14 @@ export function ReportsManager() {
                     </button>
                   </span>
                   <span className="flex-1 truncate text-[13.5px]">{q.text}</span>
-                  {questionSheetUrl(parseConfig(q.config)) && (
+                  {questionSheets(parseConfig(q.config)).length > 0 && (
                     <span
-                      title="A Google Sheet is linked to this question"
+                      title="Google Sheets linked to this question"
                       className="whitespace-nowrap rounded-[7px] border border-line px-[9px] py-[3px] text-[11px] font-semibold text-muted"
                     >
-                      Sheet
+                      {questionSheets(parseConfig(q.config)).length === 1
+                        ? "Sheet"
+                        : `${questionSheets(parseConfig(q.config)).length} sheets`}
                     </span>
                   )}
                   {parseConfig(q.config).skippable && (

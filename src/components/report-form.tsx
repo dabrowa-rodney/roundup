@@ -8,7 +8,7 @@ import { Segmented } from "./segmented";
 import {
   isSkipped,
   parseConfig,
-  questionSheetUrl,
+  questionSheets,
   RAG_CHOICES,
   SKIPPED_VALUE,
   type QuestionConfig,
@@ -231,6 +231,12 @@ interface QuestionStat {
   good: boolean;
 }
 
+interface SheetStats {
+  title: string | null;
+  ok: boolean;
+  metrics: QuestionStat[];
+}
+
 /**
  * The latest numbers from the Google Sheet attached to a question, shown
  * above the answer box so the contributor can write narrative around them —
@@ -241,7 +247,7 @@ interface QuestionStat {
 function QuestionStats({ questionId }: { questionId: number }) {
   const [state, setState] = useState<
     | { kind: "loading" }
-    | { kind: "ready"; metrics: QuestionStat[] }
+    | { kind: "ready"; sheets: SheetStats[] }
     | { kind: "unavailable" }
   >({ kind: "loading" });
 
@@ -252,11 +258,16 @@ function QuestionStats({ questionId }: { questionId: number }) {
         const res = await fetch(`/api/questions/${questionId}/stats`);
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
-        if (res.ok && data.ok && Array.isArray(data.metrics) && data.metrics.length > 0) {
-          setState({ kind: "ready", metrics: data.metrics });
+        // Only sheets that actually produced metrics are shown; an unreadable
+        // or empty one stays quiet (its link above the question still works).
+        const usable: SheetStats[] = Array.isArray(data.sheets)
+          ? (data.sheets as SheetStats[]).filter(
+              (sh) => sh.ok && Array.isArray(sh.metrics) && sh.metrics.length > 0,
+            )
+          : [];
+        if (res.ok && usable.length > 0) {
+          setState({ kind: "ready", sheets: usable });
         } else {
-          // No sheet, unreadable sheet, or no metric columns — the sheet link
-          // above the question still works, so stay quiet rather than alarm.
           setState({ kind: "unavailable" });
         }
       } catch {
@@ -278,32 +289,39 @@ function QuestionStats({ questionId }: { questionId: number }) {
   if (state.kind === "unavailable") return null;
 
   return (
-    <div className="mb-3 rounded-[11px] border border-line bg-bg px-3.5 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
-        Latest from the connected sheet
-      </div>
-      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
-        {state.metrics.map((m, i) => (
-          <div key={i} className="min-w-[90px]">
-            <div className="text-[12px] text-muted">{m.label}</div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-head text-[17px] font-bold text-ink">
-                {m.value}
-              </span>
-              {m.delta && (
-                <span
-                  className={`text-[12px] font-semibold ${
-                    m.good ? "text-good" : "text-bad"
-                  }`}
-                >
-                  {m.delta}
-                </span>
-              )}
-            </div>
+    <div className="mb-3 flex flex-col gap-2">
+      {state.sheets.map((sheet, si) => (
+        <div
+          key={si}
+          className="rounded-[11px] border border-line bg-bg px-3.5 py-3"
+        >
+          <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
+            {sheet.title || "Latest from the connected sheet"}
           </div>
-        ))}
-      </div>
-      <div className="mt-2 text-[12px] text-muted">
+          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
+            {sheet.metrics.map((m, i) => (
+              <div key={i} className="min-w-[90px]">
+                <div className="text-[12px] text-muted">{m.label}</div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-head text-[17px] font-bold text-ink">
+                    {m.value}
+                  </span>
+                  {m.delta && (
+                    <span
+                      className={`text-[12px] font-semibold ${
+                        m.good ? "text-good" : "text-bad"
+                      }`}
+                    >
+                      {m.delta}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="text-[12px] text-muted">
         Add your take below — what&apos;s behind these numbers?
       </div>
     </div>
@@ -324,8 +342,8 @@ function QuestionField({
   titleSize: string;
 }) {
   const config = parseConfig(question.config);
-  // Re-validated, never taken on trust — this goes straight into an href.
-  const sheetUrl = questionSheetUrl(config);
+  // Re-validated, never taken on trust — these go straight into hrefs.
+  const sheets = questionSheets(config);
   const skipped = isSkipped(value);
   // Remember the pre-skip draft so un-skipping restores it. null (not
   // undefined) so the save payload overwrites a previously-saved skip.
@@ -355,16 +373,25 @@ function QuestionField({
               {config.helper}
             </div>
           )}
-          {sheetUrl && (
-            <a
-              href={sheetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-[5px] text-[12.5px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
-            >
-              <ExternalLink size={13} strokeWidth={2} />
-              Open the sheet
-            </a>
+          {sheets.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {sheets.map((sheet, i) => (
+                <a
+                  key={i}
+                  href={sheet.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-[5px] text-[12.5px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
+                >
+                  <ExternalLink size={13} strokeWidth={2} />
+                  {sheet.title
+                    ? `Open ${sheet.title}`
+                    : sheets.length > 1
+                      ? `Open sheet ${i + 1}`
+                      : "Open the sheet"}
+                </a>
+              ))}
+            </div>
           )}
         </div>
         {config.skippable && (
@@ -395,7 +422,7 @@ function QuestionField({
           </button>
         )}
       </div>
-      {sheetUrl && !skipped && <QuestionStats questionId={question.id} />}
+      {sheets.length > 0 && !skipped && <QuestionStats questionId={question.id} />}
       {skipped ? (
         <div className="rounded-[11px] border border-dashed border-line bg-bg px-4 py-3 text-[13px] text-muted">
           Nothing to report this week — it won&apos;t appear in the Roundup.

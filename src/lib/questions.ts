@@ -11,25 +11,53 @@ export type QuestionType =
   | "number"
   | "file_link";
 
+export interface QuestionSheet {
+  /** What the sheet is for — shown on the contributor's stats card and the
+   *  Data sources listing so several sheets stay tellable apart. */
+  title?: string;
+  url: string;
+}
+
 export interface QuestionConfig {
   helper?: string;
   options?: string[]; // single_choice / multi_choice
   unit?: string; // number
   skippable?: boolean; // contributor may skip this question
-  /** Optional Google Sheet backing THIS question — shown to whoever answers it,
-   *  and pulled in as Roundup context alongside the report-level sheet. Always
-   *  read it through `questionSheetUrl` rather than directly. */
+  /** Google Sheets backing THIS question — shown (with live stats) to whoever
+   *  answers it, and pulled in as Roundup context alongside the report-level
+   *  sheet. Always read through `questionSheets` rather than directly. */
+  sheets?: QuestionSheet[];
+  /** Legacy single-sheet field from before `sheets` existed. Never written any
+   *  more; `questionSheets` still reads it so old questions keep working. */
   sheetUrl?: string;
 }
 
 /**
- * The question's Google Sheet, or undefined. Re-validated on the way out as
- * well as in: this value ends up in an href, and a stored value is only as
- * trustworthy as whatever wrote it. Anything that isn't a Google Sheets link
- * (a `javascript:` URL, say) reads as absent.
+ * The question's Google Sheets, in order. Re-validated on the way out as well
+ * as in: these values end up in hrefs and are fetched server-side, and a
+ * stored value is only as trustworthy as whatever wrote it — anything that
+ * isn't a Google Sheets link (a `javascript:` URL, say) is dropped. The legacy
+ * single `sheetUrl` field reads as a one-item list so old questions keep
+ * working without a data migration.
  */
-export function questionSheetUrl(config: QuestionConfig): string | undefined {
-  return normaliseSheetUrl(config.sheetUrl);
+export function questionSheets(config: QuestionConfig): QuestionSheet[] {
+  const out: QuestionSheet[] = [];
+  if (Array.isArray(config.sheets)) {
+    for (const entry of config.sheets) {
+      if (!entry || typeof entry !== "object") continue;
+      const url = normaliseSheetUrl((entry as QuestionSheet).url);
+      if (!url) continue;
+      const rawTitle = (entry as QuestionSheet).title;
+      const title =
+        typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : undefined;
+      out.push({ title, url });
+    }
+  }
+  if (out.length === 0) {
+    const legacy = normaliseSheetUrl(config.sheetUrl);
+    if (legacy) out.push({ url: legacy });
+  }
+  return out;
 }
 
 export const VALID_QUESTION_TYPES = [
@@ -62,6 +90,8 @@ export function cleanQuestionConfig(config: unknown): CleanedConfig {
     return { config: null, error: "Invalid question settings" };
   }
   const out = { ...(config as Record<string, unknown>) };
+
+  // Legacy single-sheet field — still accepted from old clients, same rule.
   const raw = out.sheetUrl;
   if (raw === undefined || raw === null || raw === "") {
     delete out.sheetUrl;
@@ -76,6 +106,38 @@ export function cleanQuestionConfig(config: unknown): CleanedConfig {
     }
     out.sheetUrl = url;
   }
+
+  // The sheets list: every entry needs a real Google Sheets link (these are
+  // rendered as hrefs and fetched server-side); titles are optional, trimmed,
+  // and capped so they stay label-sized. An empty list clears the field.
+  if (out.sheets !== undefined) {
+    if (!Array.isArray(out.sheets)) {
+      return { config: null, error: "Invalid question settings" };
+    }
+    const sheets: QuestionSheet[] = [];
+    for (const entry of out.sheets) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return { config: null, error: "Invalid question settings" };
+      }
+      const url = normaliseSheetUrl((entry as { url?: unknown }).url);
+      if (!url) {
+        return {
+          config: null,
+          error:
+            "One of the sheets doesn't look like a Google Sheets link — paste the sheet's URL, or remove that row.",
+        };
+      }
+      const rawTitle = (entry as { title?: unknown }).title;
+      const title =
+        typeof rawTitle === "string" && rawTitle.trim()
+          ? rawTitle.trim().slice(0, 60)
+          : undefined;
+      sheets.push(title ? { title, url } : { url });
+    }
+    if (sheets.length > 0) out.sheets = sheets;
+    else delete out.sheets;
+  }
+
   return { config: Object.keys(out).length > 0 ? out : null, error: null };
 }
 
