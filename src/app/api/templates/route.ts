@@ -6,7 +6,7 @@ import { getOrgPlan } from "@/lib/org-plan";
 import { getSessionUser } from "@/lib/session";
 import { ensureRootTeam } from "@/lib/teams";
 import { loadAssignees } from "@/lib/assignees";
-import { parseConfig, questionSheetUrl } from "@/lib/questions";
+import { parseConfig, questionSheets } from "@/lib/questions";
 
 // GET /api/templates — the caller's org's templates with question counts and
 // their EFFECTIVE assignees (see lib/assignees.ts: explicit rows, or the whole
@@ -68,14 +68,19 @@ export async function GET() {
 
   const sheetsByTemplate = new Map<
     number,
-    { questionId: number; question: string; url: string }[]
+    { questionId: number; question: string; title: string | null; url: string }[]
   >();
   for (const q of questionSheetRows) {
-    const url = questionSheetUrl(parseConfig(q.config));
-    if (!url) continue;
-    const list = sheetsByTemplate.get(q.templateId) || [];
-    list.push({ questionId: q.id, question: q.text, url });
-    sheetsByTemplate.set(q.templateId, list);
+    for (const sheet of questionSheets(parseConfig(q.config))) {
+      const list = sheetsByTemplate.get(q.templateId) || [];
+      list.push({
+        questionId: q.id,
+        question: q.text,
+        title: sheet.title ?? null,
+        url: sheet.url,
+      });
+      sheetsByTemplate.set(q.templateId, list);
+    }
   }
 
   // Who is expected to file each template. On a `shared` team that's every

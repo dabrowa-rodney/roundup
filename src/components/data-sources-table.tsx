@@ -7,6 +7,7 @@ const COLS = "min-w-[640px] grid-cols-[1.3fr_2.1fr_0.9fr_auto]";
 interface QuestionSheet {
   questionId: number;
   question: string;
+  title: string | null;
   url: string;
 }
 
@@ -282,12 +283,17 @@ export function DataSourcesTable() {
                   Also pulled in, from individual questions
                 </div>
                 <ul className="mt-1.5 flex flex-col gap-1">
-                  {r.questionSheets.map((qs) => (
+                  {r.questionSheets.map((qs, i) => (
                     <li
-                      key={qs.questionId}
+                      key={`${qs.questionId}-${i}`}
                       className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]"
                     >
                       <span className="text-ink">{qs.question}</span>
+                      {qs.title && (
+                        <span className="rounded-[7px] bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+                          {qs.title}
+                        </span>
+                      )}
                       <a
                         href={qs.url}
                         target="_blank"

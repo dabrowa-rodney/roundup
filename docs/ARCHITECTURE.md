@@ -213,15 +213,26 @@ The core of the product: **code owns the facts, AI writes the prose.**
   rendered to contributors as a link, so a path-only match would have accepted
   `javascript:/spreadsheets/d/x` and `https://evil.test/spreadsheets/d/x`. URLs
   are stored normalised (trimmed, explicit `https`).
-- **Two places can carry a sheet.** A report template has one
+- **Contributors see their question's numbers.** A question's sheets show
+  their latest metrics ABOVE the answer box on the report form — one titled
+  card per sheet (`GET /api/questions/[id]/stats` → `QuestionStats` in
+  `report-form.tsx`), so the answer can be narrative around the numbers. The
+  endpoint resolves URLs from the STORED question config — the caller never
+  supplies one, which is what keeps it from being an open sheet proxy — and
+  access mirrors the form: admins plus whoever owes the template
+  (`loadAssignedTemplateIds`). The display is live, not snapshotted: the
+  report stores the words; generation re-reads the sheets for the numbers.
+- **Two places can carry sheets.** A report template has one
   (`data_source_url`, edited on Data sources or straight in the report's manage
-  panel — same PATCH), and any individual question can
-  have its own (`questions.config.sheetUrl`, edited on the question — optional,
-  so no migration was needed). A question's sheet is shown next to it on the
-  report form, so whoever answers can check the numbers, and generate reads
-  **both** levels for a team, deduplicated by URL so one sheet linked twice
-  can't double-count. Read it via `questionSheetUrl()`, which re-validates on
-  the way out — a stored value is only as trustworthy as whatever wrote it.
+  panel — same PATCH), and any individual question can carry a **list of
+  titled sheets** (`questions.config.sheets: [{title?, url}]`, edited on the
+  question — jsonb, so no migration; the pre-list single `sheetUrl` field is
+  still read as a one-item list and migrates forward on the next edit). A
+  question's sheets are linked next to it on the report form with their
+  titles, and generate reads **both** levels for a team, deduplicated by URL
+  so one sheet linked twice can't double-count. Read them via
+  `questionSheets()`, which re-validates on the way out — a stored value is
+  only as trustworthy as whatever wrote it.
 - **Generate → send lifecycle** (`roundups.status`): `pending` → `draft`
   (generate/regenerate) → `sent` (send, one-shot). Both need `canManageTeam` on
   the owning team, so a team lead drives their own subtree's Roundups.
@@ -331,6 +342,7 @@ a source to copy from, not a record.
 | `roundups/generate` | POST | compile a team-period draft (AI + deterministic fallback); optional teamId, root default | `canManageTeam`, maxDuration 60 |
 | `roundups/send` | POST | publish + email recipients (one-shot); optional teamId | `canManageTeam`, maxDuration 60 |
 | `roundups/[id]/recipients` | GET/PUT | explicit per-roundup audience + tree-derived defaults; final once sent | `canManageTeam` on the owning team |
+| `questions/[id]/stats` | GET | metrics from the question's own stored sheet, for whoever owes the report | admin or assignee |
 | `sheets/preview` | GET | preview a sheet's metrics | admin (docs.google.com only) |
 | `billing/checkout` | POST | Stripe Checkout URL | admin (503 if unconfigured) |
 | `billing/portal` | POST | Stripe Customer Portal | admin (needs customer) |

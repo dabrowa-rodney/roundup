@@ -29,7 +29,7 @@ import {
   type SkimJson,
 } from "@/lib/roundup";
 import { generateRoundupAI, type PriorWeek } from "@/lib/roundup-ai";
-import { isSkipped, parseConfig, questionSheetUrl } from "@/lib/questions";
+import { isSkipped, parseConfig, questionSheets } from "@/lib/questions";
 import { fetchSheetData } from "@/lib/sheets";
 import { loadAssignees } from "@/lib/assignees";
 import { canManageTeam } from "@/lib/team-authority";
@@ -403,9 +403,9 @@ export async function POST(req: NextRequest) {
       ...srcRows
         .map((r) => r.url?.trim())
         .filter((u): u is string => !!u && u.length > 0),
-      ...questionSrcRows
-        .map((r) => questionSheetUrl(parseConfig(r.config)))
-        .filter((u): u is string => u !== undefined),
+      ...questionSrcRows.flatMap((r) =>
+        questionSheets(parseConfig(r.config)).map((sheet) => sheet.url),
+      ),
     ]),
   ];
   const sheetMetrics: MetricItem[] = [];
