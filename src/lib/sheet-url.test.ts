@@ -132,6 +132,20 @@ describe("questionSheets", () => {
     expect(questionSheets({ sheetUrl: "javascript:alert(1)" })).toEqual([]);
   });
 
+  it("passes the focus context through, trimmed", () => {
+    expect(
+      questionSheets({
+        sheets: [
+          { title: "Sales", context: "  This week's row only  ", url: REAL },
+          { context: "", url: OTHER },
+        ],
+      }),
+    ).toEqual([
+      { title: "Sales", context: "This week's row only", url: REAL },
+      { title: undefined, context: undefined, url: OTHER },
+    ]);
+  });
+
   it("survives malformed entries", () => {
     expect(
       questionSheets({

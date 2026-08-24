@@ -77,7 +77,11 @@ export async function GET(
   const results = await Promise.all(
     sheets.map(async (sheet) => {
       const preview = await fetchSheetPreview(sheet.url);
-      return { title: sheet.title ?? null, ...preview };
+      return {
+        title: sheet.title ?? null,
+        context: sheet.context ?? null,
+        ...preview,
+      };
     }),
   );
   return NextResponse.json({

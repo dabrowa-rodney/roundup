@@ -125,6 +125,10 @@ export interface CompileInput {
   childRoundups?: ChildRoundupInput[]; // sub-team roundups to roll up
   sheetMetrics?: MetricItem[]; // pulled from connected Google Sheets
   sheetSeries?: MetricSeries[]; // full sheet history (chart source data)
+  /** Admin guidance on what each sheet's analysis should focus on. Feeds the
+   *  AI prompt (and only the prompt) — deterministic compilation ignores it,
+   *  so it can steer emphasis but never move a number. */
+  sheetNotes?: { title?: string; context: string }[];
 }
 
 const RISK_RE = /risk|blocker|concern|issue|problem/i;
