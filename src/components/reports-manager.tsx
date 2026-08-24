@@ -585,15 +585,18 @@ function QuestionModal({
   );
   const [unit, setUnit] = useState(initial.unit ?? "");
   const [skippable, setSkippable] = useState(initial.skippable ?? false);
-  const [sheetRows, setSheetRows] = useState<{ title: string; url: string }[]>(
-    () => {
-      const existing = questionSheets(initial).map((sh) => ({
-        title: sh.title ?? "",
-        url: sh.url,
-      }));
-      return existing.length > 0 ? existing : [{ title: "", url: "" }];
-    },
-  );
+  const [sheetRows, setSheetRows] = useState<
+    { title: string; url: string; context: string }[]
+  >(() => {
+    const existing = questionSheets(initial).map((sh) => ({
+      title: sh.title ?? "",
+      url: sh.url,
+      context: sh.context ?? "",
+    }));
+    return existing.length > 0
+      ? existing
+      : [{ title: "", url: "", context: "" }];
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -607,7 +610,7 @@ function QuestionModal({
     setOptionsText("");
     setUnit("");
     setSkippable(false);
-    setSheetRows([{ title: "", url: "" }]);
+    setSheetRows([{ title: "", url: "", context: "" }]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -627,7 +630,11 @@ function QuestionModal({
     // before a round trip. Rows with no URL are simply dropped (a title alone
     // isn't a sheet).
     const sheets = sheetRows
-      .map((row) => ({ title: row.title.trim(), url: row.url.trim() }))
+      .map((row) => ({
+        title: row.title.trim(),
+        url: row.url.trim(),
+        context: row.context.trim(),
+      }))
       .filter((row) => row.url !== "");
     const badSheet = sheets.find((row) => !isSheetUrl(row.url));
     if (badSheet) {
@@ -645,9 +652,11 @@ function QuestionModal({
     // Always written as the `sheets` list; the legacy single sheetUrl field is
     // never re-saved, so editing an old question migrates it forward.
     if (sheets.length > 0) {
-      config.sheets = sheets.map((row) =>
-        row.title ? { title: row.title, url: row.url } : { url: row.url },
-      );
+      config.sheets = sheets.map((row) => ({
+        ...(row.title ? { title: row.title } : {}),
+        ...(row.context ? { context: row.context } : {}),
+        url: row.url,
+      }));
     }
 
     setLoading(true);
@@ -783,7 +792,7 @@ function QuestionModal({
                       onClick={() =>
                         setSheetRows((rows) =>
                           rows.length === 1
-                            ? [{ title: "", url: "" }]
+                            ? [{ title: "", url: "", context: "" }]
                             : rows.filter((_, idx) => idx !== i),
                         )
                       }
@@ -808,12 +817,30 @@ function QuestionModal({
                     className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12.5px] focus:border-accent focus:outline-none"
                     placeholder="https://docs.google.com/spreadsheets/d/..."
                   />
+                  <textarea
+                    value={row.context}
+                    onChange={(e) =>
+                      setSheetRows((rows) =>
+                        rows.map((r, idx) =>
+                          idx === i ? { ...r, context: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    maxLength={500}
+                    rows={2}
+                    aria-label={`Analysis focus for sheet ${i + 1}`}
+                    className="w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px] focus:border-accent focus:outline-none"
+                    placeholder="What should the analysis focus on? e.g. This week's row — use the history only for comparison"
+                  />
                 </div>
               ))}
               <button
                 type="button"
                 onClick={() =>
-                  setSheetRows((rows) => [...rows, { title: "", url: "" }])
+                  setSheetRows((rows) => [
+                    ...rows,
+                    { title: "", url: "", context: "" },
+                  ])
                 }
                 className="flex items-center justify-center gap-[7px] rounded-lg border border-dashed border-line py-2 text-[13px] font-semibold text-muted hover:border-accent hover:text-accent"
               >
@@ -823,8 +850,11 @@ function QuestionModal({
             <p className="mt-1 text-[12.5px] text-muted">
               Each sheet is linked next to this question (with its title) so
               whoever fills it in can check the numbers, and pulled into the
-              Roundup as context. Sharing must be set to &ldquo;Anyone with the
-              link can view&rdquo;.
+              Roundup as context. The focus note steers what the Roundup&apos;s
+              analysis emphasises and what the contributor is asked to comment
+              on — the numbers themselves always come straight from the sheet.
+              Sharing must be set to &ldquo;Anyone with the link can
+              view&rdquo;.
             </p>
           </div>
           <label className="flex cursor-pointer items-start gap-2.5">

@@ -222,6 +222,12 @@ The core of the product: **code owns the facts, AI writes the prose.**
   access mirrors the form: admins plus whoever owes the template
   (`loadAssignedTemplateIds`). The display is live, not snapshotted: the
   report stores the words; generation re-reads the sheets for the numbers.
+- **Each question sheet can carry a focus note** (`context`, ≤500 chars):
+  what the analysis should concentrate on (e.g. "this week's row — history only
+  for comparison"). It steers the PROSE in two places — the contributor's stats
+  card shows it as "Focus: …", and generate passes it to the AI prompt as
+  `sheetNotes` guidance — but never the FACTS: `compileRoundup` ignores it, so
+  extraction stays deterministic and the model still can't move a number.
 - **Two places can carry sheets.** A report template has one
   (`data_source_url`, edited on Data sources or straight in the report's manage
   panel — same PATCH), and any individual question can carry a **list of

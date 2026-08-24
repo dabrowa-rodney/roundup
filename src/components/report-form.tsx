@@ -233,6 +233,8 @@ interface QuestionStat {
 
 interface SheetStats {
   title: string | null;
+  /** The admin's focus note — what to concentrate the commentary on. */
+  context: string | null;
   ok: boolean;
   metrics: QuestionStat[];
 }
@@ -298,6 +300,12 @@ function QuestionStats({ questionId }: { questionId: number }) {
           <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted">
             {sheet.title || "Latest from the connected sheet"}
           </div>
+          {sheet.context && (
+            <div className="mt-1 text-[12.5px] text-muted">
+              <span className="font-semibold text-ink">Focus:</span>{" "}
+              {sheet.context}
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap gap-x-5 gap-y-2">
             {sheet.metrics.map((m, i) => (
               <div key={i} className="min-w-[90px]">

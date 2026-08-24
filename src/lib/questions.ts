@@ -15,6 +15,11 @@ export interface QuestionSheet {
   /** What the sheet is for — shown on the contributor's stats card and the
    *  Data sources listing so several sheets stay tellable apart. */
   title?: string;
+  /** What the analysis should FOCUS on (e.g. "this week's row; use the
+   *  history only for comparison"). Steers the Roundup's narrative and the
+   *  contributor's prompt — never which numbers are extracted: facts stay
+   *  code-derived (see docs/ARCHITECTURE.md, code-owns-facts). */
+  context?: string;
   url: string;
 }
 
@@ -50,7 +55,12 @@ export function questionSheets(config: QuestionConfig): QuestionSheet[] {
       const rawTitle = (entry as QuestionSheet).title;
       const title =
         typeof rawTitle === "string" && rawTitle.trim() ? rawTitle.trim() : undefined;
-      out.push({ title, url });
+      const rawContext = (entry as QuestionSheet).context;
+      const context =
+        typeof rawContext === "string" && rawContext.trim()
+          ? rawContext.trim()
+          : undefined;
+      out.push({ title, context, url });
     }
   }
   if (out.length === 0) {
@@ -132,7 +142,15 @@ export function cleanQuestionConfig(config: unknown): CleanedConfig {
         typeof rawTitle === "string" && rawTitle.trim()
           ? rawTitle.trim().slice(0, 60)
           : undefined;
-      sheets.push(title ? { title, url } : { url });
+      const rawContext = (entry as { context?: unknown }).context;
+      const context =
+        typeof rawContext === "string" && rawContext.trim()
+          ? rawContext.trim().slice(0, 500)
+          : undefined;
+      const sheet: QuestionSheet = { url };
+      if (title) sheet.title = title;
+      if (context) sheet.context = context;
+      sheets.push(sheet);
     }
     if (sheets.length > 0) out.sheets = sheets;
     else delete out.sheets;

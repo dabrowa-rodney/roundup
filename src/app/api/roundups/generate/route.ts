@@ -398,16 +398,29 @@ export async function POST(req: NextRequest) {
           ),
         )
     : [];
+  const allQuestionSheets = questionSrcRows.flatMap((r) =>
+    questionSheets(parseConfig(r.config)),
+  );
   const sheetUrls = [
     ...new Set([
       ...srcRows
         .map((r) => r.url?.trim())
         .filter((u): u is string => !!u && u.length > 0),
-      ...questionSrcRows.flatMap((r) =>
-        questionSheets(parseConfig(r.config)).map((sheet) => sheet.url),
-      ),
+      ...allQuestionSheets.map((sheet) => sheet.url),
     ]),
   ];
+  // Admin focus notes for those sheets — prompt guidance only, deduplicated so
+  // one sheet reused across questions doesn't repeat itself.
+  const noteKeys = new Set<string>();
+  const sheetNotes = allQuestionSheets
+    .filter((sheet) => sheet.context)
+    .filter((sheet) => {
+      const key = `${sheet.title ?? ""}|${sheet.context}`;
+      if (noteKeys.has(key)) return false;
+      noteKeys.add(key);
+      return true;
+    })
+    .map((sheet) => ({ title: sheet.title, context: sheet.context! }));
   const sheetMetrics: MetricItem[] = [];
   const sheetSeries: MetricSeries[] = [];
   for (const url of sheetUrls) {
@@ -468,6 +481,7 @@ export async function POST(req: NextRequest) {
       childRoundups: childInputs,
       sheetMetrics,
       sheetSeries,
+      sheetNotes,
     },
     priorWeeks,
     aiKey,

@@ -242,6 +242,18 @@ function buildPrompt(input: CompileInput, priorWeeks: PriorWeek[]): string {
     }
   }
 
+  // Admin-authored focus notes for the connected sheets. Guidance for the
+  // PROSE only — the numbers above are code-extracted and stay authoritative.
+  if (input.sheetNotes && input.sheetNotes.length > 0) {
+    lines.push(
+      ``,
+      `SHEET ANALYSIS GUIDANCE (from the admin — steer what the narrative emphasises; the metric values above remain the only numbers you may cite):`,
+    );
+    for (const note of input.sheetNotes) {
+      lines.push(`- ${note.title ? `${note.title}: ` : ""}${note.context}`);
+    }
+  }
+
   if (input.sheetSeries && input.sheetSeries.length > 0) {
     lines.push(
       ``,
